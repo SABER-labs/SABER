@@ -1,0 +1,1 @@
+aria2c https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-pages-articles.xml.bz2 --log=download_log.txt --all-proxy=$http_proxy --max-connection-per-server=10 --max-tries=0

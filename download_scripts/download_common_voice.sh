@@ -1,0 +1,1 @@
+aria2c --dir=/tts_data/asrdata/common_voice_v3 --input-file=common_voice_download_links.txt --log=download_log.txt --max-concurrent-downloads=3 --continue true --all-proxy=$http_proxy --max-connection-per-server=5 --max-tries=0

@@ -1,0 +1,12 @@
+audtorch
+lmdb
+msgpack
+msgpack-numpy
+librosa
+torchvision
+sentencepiece
+tqdm
+torchsummary
+python-Levenshtein
+joblib
+pytorch-ignite

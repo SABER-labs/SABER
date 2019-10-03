@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES="0,1,2" python3.6 train.py

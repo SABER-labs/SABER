@@ -1,0 +1,3 @@
+age_scripts/
+download_scripts/
+exclude.txt

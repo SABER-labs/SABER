@@ -1,0 +1,1 @@
+find /tts_data/asrdata/librispeech -type f -name "*.txt" -exec cat {} \; | sed -e 's/^[0-9\-]*\ *//' > single_text.txt
