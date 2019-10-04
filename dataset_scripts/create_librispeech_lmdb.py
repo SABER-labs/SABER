@@ -6,7 +6,7 @@ from datasets.librispeech import convert_to_mel, label_transform
 import os
 
 def exclude_func(img, label):
-    return img.squeeze(0).shape[0] > (max_audio_length_in_secs * sampling_rate)
+    return (img.squeeze(0).shape[0] > (max_audio_length_in_secs * sampling_rate)) or (len(label) > max_label_length)
 
 if __name__ == '__main__':
     trainPath = os.path.join(lmdb_root_path, 'train-labelled')

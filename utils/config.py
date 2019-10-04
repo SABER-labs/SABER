@@ -5,9 +5,9 @@ libri_unlabeled_data_sets = ['train-clean-360', 'train-other-500']
 libri_test_clean_data_sets = ['test-clean']
 libri_test_other_data_sets = ['test-other']
 libri_dev_data_sets = ['dev-clean', 'dev-other']
-sentencepiece_model = '/tts_data/saber/dataset_scripts/wiki.model'
-lmdb_root_path = 'lmdb-databases-wiki'
-log_path = "checkpoints_logs/exp"
+sentencepiece_model = '/tts_data/saber/dataset_scripts/sp_librispeech.model'
+lmdb_root_path = 'lmdb-databases-librispeech'
+log_path = "checkpoints_logs/exp-sp-nonfocal-vocab512"
 
 # Mel feature configs
 sampling_rate = 16000
@@ -15,7 +15,7 @@ ms_in_one_sec = 1000
 window_in_ms = 25
 hop_in_ms = 10
 num_mel_banks = 80
-max_audio_length_in_secs = 30
+max_audio_length_in_secs = 20
 max_label_length = 150
 samples_per_ms = int(sampling_rate / ms_in_one_sec)
 window_length = int(samples_per_ms * window_in_ms)
@@ -24,7 +24,7 @@ n_fft = int(window_length * 2)
 ref_db = 20
 max_db = 100
 num_cores = 12
-vocab_size = 1024
+vocab_size = 512
 
 # Training configs
 gpu_id = '0,1,2'

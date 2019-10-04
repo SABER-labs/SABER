@@ -16,7 +16,7 @@ from ignite.handlers import ModelCheckpoint, Timer
 from ignite.contrib.handlers.tensorboard_logger import *
 from ignite.contrib.handlers.tqdm_logger import ProgressBar
 from utils.radam import RAdam
-from utils.aggloss import FocalACELoss, FocalUDALoss
+from utils.aggloss import ACELoss, UDALoss
 import numpy as np
 
 def get_alpha(epoch):
@@ -39,8 +39,8 @@ def main():
     model = torch.nn.DataParallel(model)
     optimizer = RAdam(model.parameters(), lr=config.lr, eps=1e-5)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=config.lr_decay_step, gamma=config.lr_gamma)
-    sup_criterion = FocalACELoss()
-    unsup_criterion = FocalUDALoss()
+    sup_criterion = ACELoss()
+    unsup_criterion = UDALoss()
     tb_logger = TensorboardLogger(log_dir=log_path)
     pbar = ProgressBar(persist=True, desc="Training")
     pbar_valid = ProgressBar(persist=True, desc="Validation Clean")
