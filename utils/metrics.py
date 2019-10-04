@@ -47,7 +47,7 @@ def batch_wer_accuracy(preds, labels, label_lengths):
         gt_sentence = get_sentence(labels_list[idx:idx+length])
         wer.append(werCalc(pred_sentence, gt_sentence))
         idx += length
-    return max(0, 1 - np.mean(wer))
+    return np.mean(wer)
 
 def batch_cer_accuracy(preds, labels, label_lengths):
     pred_sentences = get_most_probable(preds)
@@ -59,7 +59,7 @@ def batch_cer_accuracy(preds, labels, label_lengths):
         gt_sentence = get_sentence(labels_list[idx:idx+length])
         cer.append(cerCalc(pred_sentence, gt_sentence))
         idx += length
-    return max(0, 1 - np.mean(cer))
+    return np.mean(cer)
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -84,7 +84,7 @@ class WordErrorRate(Accuracy):
             y_pred, labels, label_lengths = output
             wer = batch_wer_accuracy(y_pred, labels, label_lengths)
         self._num_correct += wer
-        self._num_examples += y_pred.size(0)
+        self._num_examples += 1
 
 class CharacterErrorRate(Accuracy):
 
@@ -93,7 +93,7 @@ class CharacterErrorRate(Accuracy):
             y_pred, labels, label_lengths = output
             cer = batch_cer_accuracy(y_pred, labels, label_lengths)
         self._num_correct += cer
-        self._num_examples += y_pred.size(0)
+        self._num_examples += 1
 
 if __name__ == "__main__":
     print(wer, cer)

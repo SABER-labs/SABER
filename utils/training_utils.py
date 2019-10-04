@@ -36,7 +36,7 @@ def save_checkpoint(model, optimizer, best_meter, wer, cer, epoch):
     checkpoint_path = os.path.join(config.checkpoint_root, f"saber_w{wer:.3f}_c{cer:.3f}_e{epoch}.pth")
     torch.save(state, checkpoint_path)
     logger.info(f'models saved to {checkpoint_path}')
-    if wer > best_meter.best_wer:
+    if wer < best_meter.best_wer:
         checkpoint_path = os.path.join(config.checkpoint_root, best_model_version)
         best_meter.update(wer, cer, epoch)
         torch.save(state, checkpoint_path)
@@ -71,7 +71,7 @@ class BestMeter(object):
         self.best_cer = 0
 
     def update(self, wer, cer, epoch):
-        if wer > self.best_wer:
+        if wer < self.best_wer:
             self.best_wer = wer
             self.best_cer = cer
             self.best_epoch = epoch

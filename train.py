@@ -20,7 +20,7 @@ from utils.aggloss import ACELoss, UDALoss
 import numpy as np
 
 def get_alpha(epoch):
-    return np.clip(epoch / unsupervision_warmup_epoch, 0.0, 0.5)
+    return np.clip((epoch - unsupervision_warmup_epoch) / unsupervision_warmup_epoch, 0.0, 0.5)
 
 def init_parms():
     os.environ['CUDA_VISIBLE_DEVICES'] =  os.environ.get('CUDA_VISIBLE_DEVICES', config.gpu_id)
@@ -148,7 +148,7 @@ def main():
         metrics = engine.state.metrics
         wer = metrics['wer']
         cer = metrics['cer']
-        epoch = engine.state.epoch
+        epoch = trainer.state.epoch
         best_meter.update(wer, cer, epoch)
         save_checkpoint(model, optimizer, best_meter, wer, cer, epoch)
 
