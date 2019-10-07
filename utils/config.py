@@ -30,7 +30,7 @@ vocab_size = 512
 # Training configs
 gpu_id = '0,1,2'
 workers = 30
-train_batch_size = 24 * len(gpu_id.split(","))
+train_batch_size = 8 * len(gpu_id.split(","))
 start_epoch = 0
 epochs = 600
 lr = 1e-3
@@ -42,5 +42,5 @@ best_model_version = 'best_saber.pth'
 
 augment_warmup_epoch = int(epochs * 0.2)
 unsupervision_warmup_epoch = int(epochs * 0.075)
-max_sprinkles_percent = 0.25
+max_sprinkles_percent = 0.15
 max_sprinkles = 30

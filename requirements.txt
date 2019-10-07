@@ -11,3 +11,4 @@ python-Levenshtein
 joblib
 pytorch-ignite
 toml
+imgaug

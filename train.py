@@ -21,11 +21,11 @@ import numpy as np
 import toml
 
 torch.backends.cudnn.enabled = True
-torch.backends.cudnn.benchmark = False
-torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = True
+torch.backends.cudnn.deterministic = False
 
 def get_alpha(epoch):
-    return np.clip((epoch - unsupervision_warmup_epoch) / unsupervision_warmup_epoch, 0.0, 0.5)
+    return np.clip(epoch / unsupervision_warmup_epoch, 0.0, 0.5)
 
 def init_parms():
     os.environ['CUDA_VISIBLE_DEVICES'] =  os.environ.get('CUDA_VISIBLE_DEVICES', config.gpu_id)
@@ -44,8 +44,8 @@ def main():
     model = torch.nn.DataParallel(model)
     optimizer = RAdam(model.parameters(), lr=config.lr, eps=1e-5)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=config.lr_decay_step, gamma=config.lr_gamma)
-    sup_criterion = ACELoss()
-    unsup_criterion = UDALoss()
+    sup_criterion = FocalACELoss()
+    unsup_criterion = FocalUDALoss()
     tb_logger = TensorboardLogger(log_dir=log_path)
     pbar = ProgressBar(persist=True, desc="Training")
     pbar_valid = ProgressBar(persist=True, desc="Validation Clean")
@@ -65,8 +65,11 @@ def main():
     test_other = lmdbDataset(root=testOtherPath)
     dev_other_libri = lmdbDataset(root=devOtherPath)
 
-    train_clean = MixDatasets([train_clean_libri, train_other_libri])
-    train_other = dev_other_libri
+    # train_clean = MixDatasets([train_clean_libri, train_other_libri])
+    # train_other = dev_other_libri
+
+    train_clean = train_clean_libri
+    train_other = MixDatasets([train_other_libri, dev_other_libri])
 
     logger.info(f'Loaded Train & Test Datasets, train_labbeled={len(train_clean)}, train_unlabbeled={len(train_other)}, test_clean={len(test_clean)} & test_other={len(test_other)} examples')
 
@@ -74,16 +77,16 @@ def main():
         optimizer.zero_grad()
 
         imgs_sup, labels_sup, label_lengths = next(engine.state.train_loader_labbeled)
-        # imgs_unsup, augmented_imgs_unsup = next(engine.state.train_loader_unlabbeled)
+        imgs_unsup, augmented_imgs_unsup = next(engine.state.train_loader_unlabbeled)
 
         probs_sup = model(imgs_sup.to(device))
-        # probs_unsup = model(imgs_unsup.to(device))
-        # probs_aug_unsup = model(augmented_imgs_unsup.to(device))
+        probs_unsup = model(imgs_unsup.to(device))
+        probs_aug_unsup = model(augmented_imgs_unsup.to(device))
 
         sup_loss = sup_criterion(probs_sup, labels_sup, torch.tensor([probs_sup.size(1)]*probs_sup.size(0), dtype=torch.long), label_lengths)
-        # unsup_loss = unsup_criterion(probs_unsup, probs_aug_unsup)
+        unsup_loss = unsup_criterion(probs_unsup, probs_aug_unsup)
         alpha = get_alpha(engine.state.epoch)
-        # final_loss = ((1 - alpha) * sup_loss) + (alpha * unsup_loss)
+        final_loss = ((1 - alpha) * sup_loss) + (alpha * unsup_loss)
         final_loss = sup_loss
         final_loss.backward()
         # torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)

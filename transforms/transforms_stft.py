@@ -7,6 +7,8 @@ import torch
 from torch.utils.data import Dataset
 from utils.config import augment_warmup_epoch, max_sprinkles_percent, max_sprinkles, ref_db, max_db, n_fft, hop_length, window_length
 from .spec_augment_utils import spec_augment, cutout
+from imgaug import augmenters as iaa
+from torchvision import transforms
 
 
 class ToSTFT(object):
@@ -90,8 +92,8 @@ class SpecAugmentOnMel(object):
         tensor = data['mel_spectrogram'].astype(np.float32)
         percentage = np.clip(data['epoch'] / augment_warmup_epoch, 0, 1)
         max_time_warp = max(1, int(percentage * 80))
-        max_freq_width = max(1, int(percentage * 27))
-        max_time_width = max(1, int(percentage * 100))
+        max_freq_width = max(1, int(percentage * 25))
+        max_time_width = max(1, int(percentage * 25))
         tensor = tensor.swapaxes(1, 0)
         data['mel_spectrogram'] = spec_augment(tensor, max_time_warp=max_time_warp, max_freq_width=max_freq_width,
                                                max_time_width=max_time_width, n_freq_mask=2, n_time_mask=2, no_time_wrap=self.no_time_wrap).swapaxes(1, 0)
@@ -107,6 +109,19 @@ class SpecSprinkleOnMel(object):
         max_sprinkles_cuts = max(2, int(warmup_percen * max_sprinkles))
         num_cuts = np.random.randint(1, max_sprinkles_cuts)
         tensor = cutout(tensor, percentage, num_cuts)
+        data['mel_spectrogram'] = tensor
+        return data
+
+class SpecBlurring(object):
+
+    def __call__(self, data):
+        tensor = data['mel_spectrogram'].astype(np.float32)
+        tensor = tensor[np.newaxis, :]
+        average_blur = iaa.AverageBlur(k=(1, 7)).augment_image
+        median_blur = iaa.MedianBlur(k=(1, 7)).augment_image
+        motion_blur = iaa.MotionBlur(k=(3, 7)).augment_image
+        random_blur = transforms.RandomChoice([average_blur, median_blur, motion_blur])
+        data['mel_spectrogram'] = random_blur(tensor).squeeze(0)
         return data
 
 

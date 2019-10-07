@@ -113,13 +113,11 @@ def spec_augment(x, resize_mode="PIL", max_time_warp=80,
     x = time_mask(x, max_time_width, n_time_mask, inplace=inplace, replace_with_zero=replace_with_zero)
     return x
 
-def cutout(image, percen, num_cuts, p=1.0, mask_color=0):
+def cutout(image, percen, num_cuts, mask_color=0):
     mask_size = int(percen * min(image.shape))
     mask_size_half = mask_size // 2
     offset = 1 if mask_size % 2 == 0 else 0
     image = numpy.asarray(image).copy()
-    if numpy.random.random() > p:
-        return image
     h, w = image.shape[:2]
     for i in range(num_cuts):
         cxmin, cxmax = mask_size_half, w + offset - mask_size_half

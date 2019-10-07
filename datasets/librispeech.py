@@ -16,7 +16,7 @@ def convert_to_mel(signal):
     transforms = Compose([to_stft, stft_to_mel, DeleteSTFT(), ToAudioTensor(['mel_spectrogram'])])
     return transforms(data)
 
-def image_train_transform(spec, epoch=config.epochs):
+def image_train_transform(spec, epoch):
     data = {'mel_spectrogram': spec, 'sample_rate': config.sampling_rate, 'epoch': epoch}
     frac_to_apply = np.clip(epoch / config.augment_warmup_epoch, 0, 1)
     random_apply_specaugment = RandomApply([RandomChoice([SpecAugmentOnMel(), SpecSprinkleOnMel()])], p=frac_to_apply)
@@ -37,7 +37,7 @@ def label_re_transform(classes):
 def allign_collate(batch, device='cpu'):
     img_list, label_list, epochs = zip(*batch)
     epoch = epochs[0]
-    imgs = torch.nn.utils.rnn.pad_sequence([image_train_transform(img).squeeze(0).permute(1, 0) for img in img_list], batch_first=True, padding_value=1e-8).permute(0, 2, 1)
+    imgs = torch.nn.utils.rnn.pad_sequence([image_train_transform(img, epoch=epoch).squeeze(0).permute(1, 0) for img in img_list], batch_first=True, padding_value=1e-8).permute(0, 2, 1)
     flat_label_list = np.concatenate(label_list).astype(np.int32)
     labels = torch.from_numpy(flat_label_list)
     label_lengths = torch.tensor([label.shape[0] for label in label_list], dtype=torch.int32)
