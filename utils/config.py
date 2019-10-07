@@ -5,9 +5,10 @@ libri_unlabeled_data_sets = ['train-clean-360', 'train-other-500']
 libri_test_clean_data_sets = ['test-clean']
 libri_test_other_data_sets = ['test-other']
 libri_dev_data_sets = ['dev-clean', 'dev-other']
-sentencepiece_model = '/tts_data/saber/dataset_scripts/sp_librispeech.model'
+sentencepiece_model = 'dataset_scripts/sp_librispeech.model'
 lmdb_root_path = 'lmdb-databases-librispeech'
 log_path = "checkpoints_logs/exp-sp-nonfocal-vocab512"
+jasper_model_definition = "models/jasper10x5dr.toml"
 
 # Mel feature configs
 sampling_rate = 16000
@@ -29,7 +30,7 @@ vocab_size = 512
 # Training configs
 gpu_id = '0,1,2'
 workers = 30
-train_batch_size = 16 * len(gpu_id.split(","))
+train_batch_size = 24 * len(gpu_id.split(","))
 start_epoch = 0
 epochs = 600
 lr = 1e-3

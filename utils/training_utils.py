@@ -83,15 +83,19 @@ class MixDatasets(Dataset):
     def __init__(self, datasets):
         dataset_lengths = [len(dataset) for dataset in datasets]
         dataset_length_sum = sum(dataset_lengths)
-        self.fractions = [dataset_length / dataset_length_sum for dataset_length in dataset_lengths]
+        self.fractions = [(dataset_length / dataset_length_sum) for dataset_length in dataset_lengths]
         self.nSamples = dataset_length_sum
         self.datasets = datasets
+        self.epochs = 0
 
     def __len__(self):
         return self.nSamples
 
+    def set_epochs(self, epoch):
+        self.epochs = epoch
+
     def __getitem__(self, index):
-        dataset = np.random.choice(self.datasets, p=self.fractions)
+        dataset = self.datasets[np.random.choice(range(len(self.datasets)), p=self.fractions)]
         rd_idx = np.random.randint(len(dataset))
         return dataset[rd_idx]
     

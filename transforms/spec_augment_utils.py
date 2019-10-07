@@ -89,7 +89,7 @@ def time_mask(spec, T=40, n_mask=2, replace_with_zero=True, inplace=False):
 
 def spec_augment(x, resize_mode="PIL", max_time_warp=80,
                  max_freq_width=27, n_freq_mask=2,
-                 max_time_width=100, n_time_mask=2, inplace=True, replace_with_zero=True, no_time_wrap=False):
+                 max_time_width=100, n_time_mask=2, inplace=True, replace_with_zero=False, no_time_wrap=False):
     """spec agument
 
     apply random time warping and time/freq masking

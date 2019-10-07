@@ -6,6 +6,7 @@ import numpy as np
 class ACELoss(nn.Module):
 
     def forward(self, probs, targets, input_lengths, target_lengths):
+        assert(max(target_lengths).item() < max(input_lengths).item())
         bs, T_, class_size = probs.size()
         probs = torch.softmax(probs, dim=2)
         tagets_split = list(torch.split(targets, target_lengths.tolist()))
@@ -16,8 +17,8 @@ class ACELoss(nn.Module):
         probs = torch.sum(probs, 1) # sum across seq, to get batch * class
         probs = probs/T_
         targets_padded = targets_padded/T_
-        loss1 = F.kl_div(torch.log(probs), targets_padded, reduction="batchmean")
-        return loss1
+        # return (-torch.sum(torch.log(probs)*targets_padded)) / bs
+        return F.kl_div(torch.log(probs), targets_padded, reduction="batchmean")
 
     def update_epoch(self, epoch):
         self.epoch = epoch
@@ -45,6 +46,14 @@ class UDALoss(nn.Module):
         probs1 = probs1/T_
         probs2 = probs2/T_
         return F.kl_div(torch.log(probs2), probs1, reduction="batchmean")
+
+class CustomCTCLOSS(nn.Module):
+
+    def forward(self, probs, targets, input_lengths, target_lengths):
+        probs = probs.permute(1, 0, 2)
+        assert(max(target_lengths).item() < max(input_lengths).item())
+        log_probs = torch.log_softmax(probs, dim=2)
+        return F.ctc_loss(log_probs, targets, input_lengths, target_lengths, zero_infinity=True)
 
 class FocalUDALoss(UDALoss):
 

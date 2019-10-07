@@ -152,52 +152,64 @@ class MixNetBlock(nn.Module):
 
 class MixNet(nn.Module):
     # [in_channels, out_channels, kernel_size, stride, expand_ratio, non_linear, se_ratio]
-    mixnet_m = [(24,  24,  [3],          1, 1, 'ReLU',  0.0),
-                (24,  32,  [3, 5, 7],    2, 6, 'ReLU',  0.0),
-                (32,  32,  [3],          1, 3, 'ReLU',  0.0),
-                (32,  40,  [3, 5, 7, 9], 2, 6, 'Swish', 0.5),
-                (40,  40,  [3, 5],       1, 6, 'Swish', 0.5),
-                (40,  40,  [3, 5],       1, 6, 'Swish', 0.5),
-                (40,  40,  [3, 5],       1, 6, 'Swish', 0.5),
-                (40,  80,  [3, 5, 7],    2, 6, 'Swish', 0.25),
-                (80,  80,  [3, 5, 7, 9], 1, 6, 'Swish', 0.25),
-                (80,  80,  [3, 5, 7, 9], 1, 6, 'Swish', 0.25),
-                (80,  80,  [3, 5, 7, 9], 1, 6, 'Swish', 0.25),
-                (80,  120, [3],          1, 6, 'Swish', 0.5),
-                (120, 120, [3, 5, 7, 9], 1, 3, 'Swish', 0.5),
-                (120, 120, [3, 5, 7, 9], 1, 3, 'Swish', 0.5),
-                (120, 120, [3, 5, 7, 9], 1, 3, 'Swish', 0.5),
-                (120, 200, [3, 5, 7, 9], 1, 6, 'Swish', 0.5),
-                (200, 200, [3, 5, 7, 9], 1, 6, 'Swish', 0.5),
-                (200, 200, [3, 5, 7, 9], 1, 6, 'Swish', 0.5),
-                (200, 200, [3, 5, 7, 9], 1, 6, 'Swish', 0.5)]
+    mixnet_speech = [
+        (128, 128, [11], 2, 1, 'ReLU', 0.0),
+        (128, 128+32, [11, 13], 1, 2, 'ReLU', 0.0),
+        (128+32, 128+32, [9, 11, 13], 1, 2, 'ReLU', 0.0),
+        (128+32, 128+32, [9, 11, 13], 1, 2, 'Swish', 0.25),
+        (128+32, 128+32, [9, 11, 13], 1, 2, 'Swish', 0.25),
+        (128+32, 128+32*2, [9, 11, 13], 2, 2, 'Swish', 0.25),
+        (128+32*2, 128+32*2, [9, 11, 13], 1, 2, 'Swish', 0.25),
+        (128+32*2, 128+32*2, [9, 11, 13], 1, 2, 'Swish', 0.25),
+        (128+32*2, 128+32*2, [9, 11, 13], 2, 2, 'Swish', 0.25),
+        (128+32*2, 128+32*3, [13, 15, 17], 1, 2, 'Swish', 0.25),
+        (128+32*3, 128+32*3, [13, 15, 17], 1, 2, 'Swish', 0.25),
+        (128+32*3, 128+32*3, [13, 15, 17], 1, 2, 'Swish', 0.25),
+        (128+32*3, 128+32*3, [13, 15, 17], 1, 2, 'Swish', 0.25),
+        (128+32*3, 128+32*4, [13, 15, 17], 1, 2, 'Swish', 0.25),
+        (128+32*4, 128+32*4, [15, 17, 19], 1, 2, 'Swish', 0.25),
+        (128+32*4, 128+32*4, [15, 17, 19], 1, 2, 'Swish', 0.25),
+        (128+32*4, 128+32*4, [15, 17, 19], 1, 2, 'Swish', 0.25),
+        (128+32*4, 128+32*5, [17, 19, 21], 1, 2, 'Swish', 0.25),
+        (128+32*5, 128+32*5, [17, 19, 21], 1, 2, 'Swish', 0.25),
+        (128+32*5, 128+32*5, [17, 19, 21], 1, 2, 'Swish', 0.25),
+        (128+32*5, 128+32*6, [19, 21, 23], 1, 2, 'Swish', 0.25),
+        (128+32*6, 128+32*6, [19, 21, 23], 1, 2, 'Swish', 0.25),
+        (128+32*6, 128+32*6, [19, 21, 23], 1, 2, 'Swish', 0.25),
+        (128+32*6, 128+32*6, [19, 21, 23], 1, 2, 'Swish', 0.25),
+        (128+32*6, 128+32*7, [21, 23, 25], 1, 2, 'Swish', 0.25),
+        (128+32*7, 128+32*7, [21, 23, 25], 1, 2, 'Swish', 0.25),
+        (128+32*7, 128+32*7, [21, 23, 25], 1, 2, 'Swish', 0.25),
+        (128+32*7, 128+32*7, [21, 23, 25], 1, 2, 'Swish', 0.25),
+        (128+32*7, 128+32*8, [23, 25, 27], 1, 2, 'Swish', 0.25),
+        (128+32*8, 128+32*8, [23, 25, 27], 1, 2, 'Swish', 0.25),
+        (128+32*8, 128+32*8, [23, 25, 27], 1, 2, 'Swish', 0.25),
+        (128+32*8, 128+32*8, [23, 25, 27], 1, 2, 'Swish', 0.25),
+        (128+32*8, 128+32*8, [23, 25, 27], 1, 2, 'Swish', 0.25),
+        (128+32*8, 128+32*8, [23, 25, 27], 1, 2, 'Swish', 0.25),
+        (128+32*8, 128+32*9, [25, 27, 29], 1, 2, 'Swish', 0.25),
+        (128+32*9, 128+32*9, [25, 27, 29], 1, 2, 'Swish', 0.25),
+        (128+32*9, 128+32*9, [25, 27, 29], 1, 2, 'Swish', 0.25),
+        (128+32*9, 128+32*9, [25, 27, 29], 1, 2, 'Swish', 0.25),
+        (128+32*9, 128+32*9, [25, 27, 29], 1, 2, 'Swish', 0.25)
+    ]
 
-    def __init__(self, net_type='mixnet_l', num_classes=1024, stem_channels=16, depth_multiplier=1.0):
+    def __init__(self, num_classes=512, depth_multiplier=1.0):
         super(MixNet, self).__init__()
+        config = self.mixnet_speech
+        stem_channels = 128
+        dropout_rate = 0.4
 
-        if net_type == 'mixnet_m':
-            config = self.mixnet_m
-            stem_channels = 24
-            dropout_rate = 0.25
-        elif net_type == 'mixnet_l':
-            config = self.mixnet_m
-            stem_channels = 24
-            depth_multiplier *= 2.0
-            dropout_rate = 0.25
-        else:
-            raise TypeError('Unsupported MixNet type')
-
-        self._stage_out_channels = int(self.mixnet_m[-1][1] * 1.6 * depth_multiplier)
+        self._stage_out_channels = int(1024)
 
         # depth multiplier
-        if depth_multiplier != 1.0:
-            stem_channels = _RoundChannels(stem_channels*depth_multiplier)
+        stem_channels = _RoundChannels(stem_channels*depth_multiplier)
 
-            for i, conf in enumerate(config):
-                conf_ls = list(conf)
-                conf_ls[0] = _RoundChannels(conf_ls[0]*depth_multiplier)
-                conf_ls[1] = _RoundChannels(conf_ls[1]*depth_multiplier)
-                config[i] = tuple(conf_ls)
+        for i, conf in enumerate(config):
+            conf_ls = list(conf)
+            conf_ls[0] = _RoundChannels(conf_ls[0]*depth_multiplier)
+            conf_ls[1] = _RoundChannels(conf_ls[1]*depth_multiplier)
+            config[i] = tuple(conf_ls)
 
         # stem convolution
         self.stem_conv = Conv3x3Bn(80, stem_channels, 2)
@@ -235,7 +247,7 @@ class MixNet(nn.Module):
                 m.bias.data.zero_()
             elif isinstance(m, nn.Linear):
                 n = m.weight.size(1)
-                m.weight.data.normal_(0, 0.01)
+                m.weight.data.normal_(0, math.sqrt(2.0 / n))
                 m.bias.data.zero_()
 
 
@@ -252,7 +264,7 @@ if __name__ == '__main__':
     from torchsummary import summary
     from time import time
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    net = MixNet(net_type='mixnet_l').to(device)
+    net = MixNet().to(device)
     summary(net, (80, 3001), batch_size=1, device=device)
     image = torch.randn(1, 80, 3001).to(device)
     start = time()

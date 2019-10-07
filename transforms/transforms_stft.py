@@ -5,14 +5,14 @@ import numpy as np
 import librosa
 import torch
 from torch.utils.data import Dataset
-from utils.config import augment_warmup_epoch, max_sprinkles_percent, max_sprinkles, ref_db, max_db
+from utils.config import augment_warmup_epoch, max_sprinkles_percent, max_sprinkles, ref_db, max_db, n_fft, hop_length, window_length
 from .spec_augment_utils import spec_augment, cutout
 
 
 class ToSTFT(object):
     """Applies on an audio the short time fourier transform."""
 
-    def __init__(self, n_fft=2048, hop_length=512, win_length=2048):
+    def __init__(self, n_fft=n_fft, hop_length=hop_length, win_length=window_length):
         self.n_fft = n_fft
         self.hop_length = hop_length
         self.win_length = win_length
@@ -23,6 +23,7 @@ class ToSTFT(object):
         data['n_fft'] = self.n_fft
         data['hop_length'] = self.hop_length
         data['win_length'] = self.win_length
+        samples, index = librosa.effects.trim(samples, top_db=60, frame_length=self.n_fft, hop_length=self.hop_length)
         data['stft'] = librosa.stft(
             samples, n_fft=self.n_fft, hop_length=self.hop_length, win_length=self.win_length)
         data['stft_shape'] = data['stft'].shape
@@ -128,7 +129,7 @@ class FixSTFTDimension(object):
 class ToMelSpectrogramFromSTFT(object):
     """Creates the mel spectrogram from the short time fourier transform of a file. The result is a 32x32 matrix."""
 
-    def __init__(self, n_mels=32):
+    def __init__(self, n_mels=80):
         self.n_mels = n_mels
 
     def __call__(self, data):

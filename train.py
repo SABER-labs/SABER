@@ -1,7 +1,7 @@
 from utils import config
 import os
 import torch
-from models.mixnet import MixNet
+from models.quartznet import QuartzNet
 from utils.logger import logger
 from functools import partial
 from datasets.librispeech import allign_collate, align_collate_unlabelled, allign_collate_val
@@ -16,8 +16,13 @@ from ignite.handlers import ModelCheckpoint, Timer
 from ignite.contrib.handlers.tensorboard_logger import *
 from ignite.contrib.handlers.tqdm_logger import ProgressBar
 from utils.radam import RAdam
-from utils.aggloss import ACELoss, UDALoss
+from utils.aggloss import ACELoss, UDALoss, CustomCTCLOSS, FocalACELoss, FocalUDALoss
 import numpy as np
+import toml
+
+torch.backends.cudnn.enabled = True
+torch.backends.cudnn.benchmark = False
+torch.backends.cudnn.deterministic = True
 
 def get_alpha(epoch):
     return np.clip((epoch - unsupervision_warmup_epoch) / unsupervision_warmup_epoch, 0.0, 0.5)
@@ -35,7 +40,7 @@ def main():
     params = init_parms()
     start_epoch = params['start_epoch']
     device = params.get('device')
-    model = MixNet(net_type='mixnet_l', num_classes=config.vocab_size).to(device)
+    model = QuartzNet(num_classes=config.vocab_size).to(device)
     model = torch.nn.DataParallel(model)
     optimizer = RAdam(model.parameters(), lr=config.lr, eps=1e-5)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=config.lr_decay_step, gamma=config.lr_gamma)
@@ -52,31 +57,36 @@ def main():
     trainOtherPath = os.path.join(lmdb_root_path, 'train-unlabelled')
     testCleanPath = os.path.join(lmdb_root_path, 'test-clean')
     testOtherPath = os.path.join(lmdb_root_path, 'test-other')
-    # devOtherPath = os.path.join(lmdb_root_path, 'dev-other')
+    devOtherPath = os.path.join(lmdb_root_path, 'dev-other')
 
-    train_clean = lmdbDataset(root=trainCleanPath)
-    train_other = lmdbDataset(root=trainOtherPath)
+    train_clean_libri = lmdbDataset(root=trainCleanPath)
+    train_other_libri = lmdbDataset(root=trainOtherPath)
     test_clean = lmdbDataset(root=testCleanPath)
     test_other = lmdbDataset(root=testOtherPath)
-    # dev_other = lmdbDataset(root=devOtherPath)
-    # train_all = MixDatasets([train_other, dev_other])
+    dev_other_libri = lmdbDataset(root=devOtherPath)
+
+    train_clean = MixDatasets([train_clean_libri, train_other_libri])
+    train_other = dev_other_libri
+
     logger.info(f'Loaded Train & Test Datasets, train_labbeled={len(train_clean)}, train_unlabbeled={len(train_other)}, test_clean={len(test_clean)} & test_other={len(test_other)} examples')
 
     def train_update_function(engine, _):
         optimizer.zero_grad()
 
         imgs_sup, labels_sup, label_lengths = next(engine.state.train_loader_labbeled)
-        imgs_unsup, augmented_imgs_unsup = next(engine.state.train_loader_unlabbeled)
+        # imgs_unsup, augmented_imgs_unsup = next(engine.state.train_loader_unlabbeled)
 
         probs_sup = model(imgs_sup.to(device))
-        probs_unsup = model(imgs_unsup.to(device))
-        probs_aug_unsup = model(augmented_imgs_unsup.to(device))
+        # probs_unsup = model(imgs_unsup.to(device))
+        # probs_aug_unsup = model(augmented_imgs_unsup.to(device))
 
-        sup_loss = sup_criterion(probs_sup, labels_sup, label_lengths, label_lengths)
-        unsup_loss = unsup_criterion(probs_unsup, probs_aug_unsup)
+        sup_loss = sup_criterion(probs_sup, labels_sup, torch.tensor([probs_sup.size(1)]*probs_sup.size(0), dtype=torch.long), label_lengths)
+        # unsup_loss = unsup_criterion(probs_unsup, probs_aug_unsup)
         alpha = get_alpha(engine.state.epoch)
-        final_loss = ((1 - alpha) * sup_loss) + (alpha * unsup_loss)
+        # final_loss = ((1 - alpha) * sup_loss) + (alpha * unsup_loss)
+        final_loss = sup_loss
         final_loss.backward()
+        # torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
         optimizer.step()
         return final_loss.item()
 
