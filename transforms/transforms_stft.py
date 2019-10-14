@@ -5,7 +5,7 @@ import numpy as np
 import librosa
 import torch
 from torch.utils.data import Dataset
-from utils.config import augment_warmup_epoch, max_sprinkles_percent, max_sprinkles, ref_db, max_db, n_fft, hop_length, window_length
+from utils.config import augment_warmup_epoch, max_sprinkles_percent, max_sprinkles, ref_db, max_db, n_fft, hop_length, window_length, config_time_warp, config_freq_width, config_time_width
 from .spec_augment_utils import spec_augment, cutout
 from imgaug import augmenters as iaa
 from torchvision import transforms
@@ -91,9 +91,9 @@ class SpecAugmentOnMel(object):
     def __call__(self, data):
         tensor = data['mel_spectrogram'].astype(np.float32)
         percentage = np.clip(data['epoch'] / augment_warmup_epoch, 0, 1)
-        max_time_warp = max(1, int(percentage * 80))
-        max_freq_width = max(1, int(percentage * 25))
-        max_time_width = max(1, int(percentage * 25))
+        max_time_warp = max(1, int(percentage * config_time_warp))
+        max_freq_width = max(1, int(percentage * config_freq_width))
+        max_time_width = max(1, int(percentage * config_time_width))
         tensor = tensor.swapaxes(1, 0)
         data['mel_spectrogram'] = spec_augment(tensor, max_time_warp=max_time_warp, max_freq_width=max_freq_width,
                                                max_time_width=max_time_width, n_freq_mask=2, n_time_mask=2, no_time_wrap=self.no_time_wrap).swapaxes(1, 0)

@@ -12,3 +12,7 @@ joblib
 pytorch-ignite
 toml
 imgaug
+geomloss
+nemo-toolkit
+nemo-asr
+nemo-nlp

@@ -2,7 +2,7 @@ from datasets.librispeech import get_sentence
 import torch.nn as nn
 
 def get_most_probable(tensor):
-    values, preds_idx = tensor.max(2)
+    values, preds_idx = tensor.max(1)
     sentences = [get_sentence(seq) for seq in preds_idx.tolist()]
     return sentences
 

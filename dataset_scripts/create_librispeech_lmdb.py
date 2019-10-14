@@ -1,12 +1,14 @@
 from audtorch import datasets, transforms
-from utils.config import libri_dataset_root, libri_labelled_data_sets, libri_unlabeled_data_sets, lmdb_root_path, max_audio_length_in_secs, sampling_rate, max_label_length, libri_test_clean_data_sets, libri_test_other_data_sets, libri_dev_data_sets
+from utils.config import libri_dataset_root, libri_labelled_data_sets, libri_unlabeled_data_sets, lmdb_root_path, max_audio_length_in_secs, min_audio_length_in_secs, sampling_rate, max_label_length, libri_test_clean_data_sets, libri_test_other_data_sets, libri_dev_data_sets
 from utils.lmdb import createDataset_parallel as createDataset
 from utils.logger import logger
 from datasets.librispeech import convert_to_mel, label_transform
 import os
 
 def exclude_func(img, label):
-    return (img.squeeze(0).shape[0] > (max_audio_length_in_secs * sampling_rate)) or (len(label) > max_label_length)
+    audio_size = img.squeeze(0).shape[0]
+    label_size = len(label)
+    return not ((min_audio_length_in_secs <= (audio_size / sampling_rate) <= max_audio_length_in_secs) and (label_size <= max_label_length))
 
 if __name__ == '__main__':
     trainPath = os.path.join(lmdb_root_path, 'train-labelled')
@@ -21,7 +23,6 @@ if __name__ == '__main__':
     os.makedirs(testOtherPath, exist_ok=True)
     os.makedirs(devPath, exist_ok=True)
     logger.info('Loading datasets')
-
 
     data_labbeled = datasets.LibriSpeech(root=libri_dataset_root, sets=libri_labelled_data_sets, download=False)
     logger.info('Labelled dataset loaded')

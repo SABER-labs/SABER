@@ -37,7 +37,7 @@ def label_re_transform(classes):
 def allign_collate(batch, device='cpu'):
     img_list, label_list, epochs = zip(*batch)
     epoch = epochs[0]
-    imgs = torch.nn.utils.rnn.pad_sequence([image_train_transform(img, epoch=epoch).squeeze(0).permute(1, 0) for img in img_list], batch_first=True, padding_value=1e-8).permute(0, 2, 1)
+    imgs = torch.nn.utils.rnn.pad_sequence([image_train_transform(img, epoch=epoch).squeeze(0).permute(1, 0) for img in img_list], batch_first=True, padding_value=0).permute(0, 2, 1)
     flat_label_list = np.concatenate(label_list).astype(np.int32)
     labels = torch.from_numpy(flat_label_list)
     label_lengths = torch.tensor([label.shape[0] for label in label_list], dtype=torch.int32)
@@ -45,7 +45,7 @@ def allign_collate(batch, device='cpu'):
 
 def allign_collate_val(batch, device='cpu'):
     img_list, label_list, _ = zip(*batch)
-    imgs = torch.nn.utils.rnn.pad_sequence([image_val_transform(img).squeeze(0).permute(1, 0) for img in img_list], batch_first=True, padding_value=1e-8).permute(0, 2, 1)
+    imgs = torch.nn.utils.rnn.pad_sequence([image_val_transform(img).squeeze(0).permute(1, 0) for img in img_list], batch_first=True, padding_value=0).permute(0, 2, 1)
     flat_label_list = np.concatenate(label_list).astype(np.int32)
     labels = torch.from_numpy(flat_label_list)
     label_lengths = torch.tensor([label.shape[0] for label in label_list], dtype=torch.int32)
@@ -53,10 +53,8 @@ def allign_collate_val(batch, device='cpu'):
 
 def align_collate_unlabelled(batch, device='cpu'):
     img_list, label_list, epochs = zip(*batch)
-    imgs = torch.nn.utils.rnn.pad_sequence([image_val_transform(img).squeeze(0).permute(1, 0) for img in img_list], batch_first=True, padding_value=1e-8).permute(0, 2, 1)
-    # imgs = torch.stack([image_val_transform(img) for img in img_list])
-    # augmented_imgs = torch.stack([image_train_transform(img, epoch=config.augment_warmup_epoch) for img in img_list])
-    augmented_imgs = torch.nn.utils.rnn.pad_sequence([image_train_transform(img, epoch=config.augment_warmup_epoch).squeeze(0).permute(1, 0) for img in img_list], batch_first=True, padding_value=1e-8).permute(0, 2, 1)
+    imgs = torch.nn.utils.rnn.pad_sequence([image_val_transform(img).squeeze(0).permute(1, 0) for img in img_list], batch_first=True, padding_value=0).permute(0, 2, 1)
+    augmented_imgs = torch.nn.utils.rnn.pad_sequence([image_train_transform(img, epoch=config.augment_warmup_epoch).squeeze(0).permute(1, 0) for img in img_list], batch_first=True, padding_value=0).permute(0, 2, 1)
     return (imgs, augmented_imgs)
 
 def process_seq(sequence):

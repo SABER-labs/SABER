@@ -24,14 +24,17 @@ def createDataset_parallel(outputPath, dataset, img_transform=None, label_transf
     logger.info(f'Begining to create dataset at {outputPath}')
     cache = {}
     done = 0
+    ignored = 0
     with Parallel(n_jobs=n_jobs, require='sharedmem') as parallel:
-        while done < nSamples:
+        while done < nSamples - ignored:
             num_left_or_batch_size = min(100, nSamples - done)
             parallel(delayed(fillCache)(done + i, dataset, cache, img_transform=img_transform, label_transform=label_transform, exclude_func=exclude_func) for i in range(num_left_or_batch_size))
             writeCache(env, cache)
+            done_batch_size = len(cache.items())
+            done += done_batch_size
             cache = {}
-            done += num_left_or_batch_size
-            logger.info(f'Written {done:d} / {nSamples:d}')
+            ignored += (num_left_or_batch_size - done_batch_size)
+            logger.info(f'Written {done:d} / {nSamples - ignored:d}')
     nSamples = done
     cache['num-samples'] = str(nSamples).encode('ascii')
     writeCache(env, cache)

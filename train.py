@@ -16,7 +16,8 @@ from ignite.handlers import ModelCheckpoint, Timer
 from ignite.contrib.handlers.tensorboard_logger import *
 from ignite.contrib.handlers.tqdm_logger import ProgressBar
 from utils.radam import RAdam
-from utils.aggloss import ACELoss, UDALoss, CustomCTCLOSS, FocalACELoss, FocalUDALoss
+from utils.aggloss import ACELoss, UDALoss, CustomCTCLoss, FocalACELoss, FocalUDALoss
+from utils.training_utils import load_checkpoint
 import numpy as np
 import toml
 
@@ -32,7 +33,7 @@ def init_parms():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     params = {
         'device': device,
-        'start_epoch': 0
+        'start_epoch': -1
     }
     return params
 
@@ -42,10 +43,12 @@ def main():
     device = params.get('device')
     model = QuartzNet(num_classes=config.vocab_size).to(device)
     model = torch.nn.DataParallel(model)
-    optimizer = RAdam(model.parameters(), lr=config.lr, eps=1e-5)
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=config.lr_decay_step, gamma=config.lr_gamma)
-    sup_criterion = FocalACELoss()
-    unsup_criterion = FocalUDALoss()
+    optimizer = RAdam(model.parameters(), lr=config.lr)
+    load_checkpoint(model, optimizer, params)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=config.lr_decay_step, gamma=config.lr_gamma, last_epoch=start_epoch)
+    # sup_criterion = FocalACELoss()
+    sup_criterion = CustomCTCLoss()
+    unsup_criterion = UDALoss()
     tb_logger = TensorboardLogger(log_dir=log_path)
     pbar = ProgressBar(persist=True, desc="Training")
     pbar_valid = ProgressBar(persist=True, desc="Validation Clean")
@@ -65,31 +68,42 @@ def main():
     test_other = lmdbDataset(root=testOtherPath)
     dev_other_libri = lmdbDataset(root=devOtherPath)
 
-    # train_clean = MixDatasets([train_clean_libri, train_other_libri])
-    # train_other = dev_other_libri
+    train_clean = MixDatasets([train_clean_libri, train_other_libri])
+    train_other = dev_other_libri
 
-    train_clean = train_clean_libri
-    train_other = MixDatasets([train_other_libri, dev_other_libri])
+    # train_clean = train_clean_libri
+    # train_other = MixDatasets([train_other_libri, dev_other_libri])
 
     logger.info(f'Loaded Train & Test Datasets, train_labbeled={len(train_clean)}, train_unlabbeled={len(train_other)}, test_clean={len(test_clean)} & test_other={len(test_other)} examples')
 
     def train_update_function(engine, _):
         optimizer.zero_grad()
+        model.zero_grad()
 
+        # Supervised gt, pred
         imgs_sup, labels_sup, label_lengths = next(engine.state.train_loader_labbeled)
-        imgs_unsup, augmented_imgs_unsup = next(engine.state.train_loader_unlabbeled)
+        imgs_sup = imgs_sup.to(device)
+        labels_sup = labels_sup.to(device)
+        probs_sup = model(imgs_sup)
 
-        probs_sup = model(imgs_sup.to(device))
-        probs_unsup = model(imgs_unsup.to(device))
-        probs_aug_unsup = model(augmented_imgs_unsup.to(device))
+        # Unsupervised gt, pred
+        # imgs_unsup, augmented_imgs_unsup = next(engine.state.train_loader_unlabbeled)
+        # with torch.no_grad():
+        #     probs_unsup = model(imgs_unsup.to(device))
+        #     probs_aug_unsup = model(augmented_imgs_unsup.to(device))
 
         sup_loss = sup_criterion(probs_sup, labels_sup, torch.tensor([probs_sup.size(1)]*probs_sup.size(0), dtype=torch.long), label_lengths)
-        unsup_loss = unsup_criterion(probs_unsup, probs_aug_unsup)
-        alpha = get_alpha(engine.state.epoch)
-        final_loss = ((1 - alpha) * sup_loss) + (alpha * unsup_loss)
+        # unsup_loss = unsup_criterion(probs_unsup, probs_aug_unsup)
+
+        # Blend supervised and unsupervised losses till unsupervision_warmup_epoch
+        # alpha = get_alpha(engine.state.epoch)
+        # final_loss = ((1 - alpha) * sup_loss) + (alpha * unsup_loss)
+
         final_loss = sup_loss
+
         final_loss.backward()
         # torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
+        # torch.nn.utils.clip_grad_value_(model.parameters(), 5.0)
         optimizer.step()
         return final_loss.item()
 
@@ -135,6 +149,11 @@ def main():
     pbar_valid.attach(evaluator_clean, ['wer', 'cer'], event_name=Events.EPOCH_COMPLETED, closing_event_name=Events.COMPLETED)
     pbar_valid_other.attach(evaluator_other, ['wer', 'cer'], event_name=Events.EPOCH_COMPLETED, closing_event_name=Events.COMPLETED)
     timer.attach(trainer)
+
+    @trainer.on(Events.STARTED)
+    def set_init_epoch(engine):
+        engine.state.epoch = params['start_epoch']
+        logger.info(f'Initial epoch for trainer set to {engine.state.epoch}')
 
     @trainer.on(Events.EPOCH_STARTED)
     def set_model_train(engine):
