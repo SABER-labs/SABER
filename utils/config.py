@@ -43,7 +43,7 @@ cyclic_lr_decay = [60, 120, 240, 480, 960]
 cyclic_lr_min = 1e-4
 lr_gamma = 0.1
 checkpoint_root = 'checkpoints'
-checkpoint_version = ''
+checkpoint_version = 'saber_w0.672_c0.360_e40.pth'
 best_model_version = 'best_saber.pth'
 
 # UDA hyper-params

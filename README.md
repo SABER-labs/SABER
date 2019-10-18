@@ -7,7 +7,7 @@ SABER consists of the following components
 
 * An Mixnet based variant of QuartzNet by NVIDIA
 * RAdam optimizer to offset warmup used by SpecAugment
-* Data Augmentions used are SpecAugment, SpecSparkle a cutout inspired variant and SpecBlur (a novel approach). Augmentation parameters linearly increase in a curriculum based approach.
+* Data Augmentions used are SpecNoise, SpecAugment, SpecSparkle a cutout inspired variant, SpecBlur (a novel approach). Augmentation parameters linearly increase in a curriculum based approach.
 * Aggregated Cross Entropy loss instead of CTC loss for easier training
 * Unsupervised Data Augmentation as means for Semi-Supervised Learning
 
