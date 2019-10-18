@@ -5,7 +5,7 @@ A PyTorch implementation for the paper #TODO which provides easily reproducible 
 ## Overview
 SABER consists of the following components
 
-* An Mixnet based modification of quartznet
+* An Mixnet based variant of QuartzNet by NVIDIA
 * RAdam optimizer to offset warmup used by SpecAugment
 * SpecAugment and SpecSparkle a cutout inspired variant as Data Augmentations whose parameters linearly increase in a curriculum based approach
 * Aggregated Cross Entropy loss instead of CTC loss for easier training
