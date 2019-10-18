@@ -6,11 +6,6 @@ __pycache__/
 # C extensions
 *.so
 
-# Images
-*.png
-*.jpg
-*.jpeg
-
 # Distribution / packaging
 .Python
 build/
@@ -52,3 +47,6 @@ instance/
 # IPython
 profile_default/
 ipython_config.py
+
+# repositry specific
+1cycle_policy_images
