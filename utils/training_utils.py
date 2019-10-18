@@ -5,6 +5,9 @@ import os
 from torch.utils.data import Dataset
 from ignite.utils import convert_tensor
 import numpy as np
+from ignite.engine import Events, Engine
+from ignite._utils import _to_hours_mins_secs
+import time
 
 def _prepare_batch(batch, device, non_blocking):
     x, y = batch
@@ -37,8 +40,7 @@ def save_checkpoint(model, optimizer, best_meter, wer, cer, epoch):
     torch.save(state, checkpoint_path)
     logger.info(f'models saved to {checkpoint_path}')
     if wer < best_meter.best_wer:
-        checkpoint_path = os.path.join(config.checkpoint_root, best_model_version)
-        best_meter.update(wer, cer, epoch)
+        checkpoint_path = os.path.join(config.checkpoint_root, config.best_model_version)
         torch.save(state, checkpoint_path)
         logger.info(f'Best Model Saved to {checkpoint_path}')
 
@@ -56,8 +58,8 @@ def load_checkpoint(model, optimizer, params):
                 for k, v in state.items():
                     if torch.is_tensor(v):
                         state[k] = v.cuda()
-        #set_optimizer_learning_rate(optimizer, loader['optimizer_lr'])
-        set_optimizer_learning_rate(optimizer, config.lr)
+        set_optimizer_learning_rate(optimizer, loader['optimizer_lr'])
+        # set_optimizer_learning_rate(optimizer, config.lr)
         params['best_stats'] = loader['best_stats']
         params['start_epoch'] = loader['epoch']
         logger.info(f'Checkpoint and Optimizer loaded from {checkpoint_path}')
@@ -71,8 +73,8 @@ class BestMeter(object):
 
     def reset(self):
         self.best_epoch = 0
-        self.best_wer = 0
-        self.best_cer = 0
+        self.best_wer = 10000
+        self.best_cer = 10000
 
     def update(self, wer, cer, epoch):
         if wer < self.best_wer:
@@ -82,24 +84,3 @@ class BestMeter(object):
 
     def __str__(self):
         return f"Epoch: {self.best_epoch}, WER: {self.best_wer:.3f}, CER: {self.best_cer:.3f}"
-
-class MixDatasets(Dataset):
-    def __init__(self, datasets):
-        dataset_lengths = [len(dataset) for dataset in datasets]
-        dataset_length_sum = sum(dataset_lengths)
-        self.fractions = [(dataset_length / dataset_length_sum) for dataset_length in dataset_lengths]
-        self.nSamples = dataset_length_sum
-        self.datasets = datasets
-
-    def __len__(self):
-        return self.nSamples
-
-    def set_epochs(self, epoch):
-        for dataset in self.datasets:
-            dataset.set_epochs(epoch)
-
-    def __getitem__(self, index):
-        dataset = self.datasets[np.random.choice(range(len(self.datasets)), p=self.fractions)]
-        rd_idx = np.random.randint(len(dataset))
-        return dataset[rd_idx]
-    

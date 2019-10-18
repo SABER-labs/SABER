@@ -81,6 +81,7 @@ def createDataset_single(outputPath, dataset, img_transform=None, label_transfor
 class lmdbDataset(Dataset):
 
     def __init__(self, root=None, transform=None, target_transform=None):
+        super().__init__()
         self.env = lmdb.open(
             root,
             max_readers=1,
@@ -110,6 +111,75 @@ class lmdbDataset(Dataset):
     def __getitem__(self, index):
         assert index <= len(self), 'index range error'
         with self.env.begin(write=False) as txn:
+            data_key = f'data-{index:09d}'.encode('ascii')
+            data_enc = txn.get(data_key)
+            if not data_enc:
+                return self.__getitem__(np.random.choice(range(len(self))))
+            data = msgpack.unpackb(data_enc, object_hook=m.decode, raw=False)
+
+            img = data['img']
+            label = data['label']
+
+            if self.transform is not None:
+                img = self.transform(img)
+
+            if self.target_transform is not None:
+                label = self.target_transform(label)
+
+            return (img, label, self.epochs)
+
+class lmdbDoubleDataset(Dataset):
+
+    def __init__(self, root1=None, root2=None, transform=None, target_transform=None):
+        super().__init__()
+        self.env1 = lmdb.open(
+            root1,
+            max_readers=1,
+            readonly=True,
+            lock=False,
+            readahead=False,
+            meminit=False)
+
+        self.env2 = lmdb.open(
+            root2,
+            max_readers=1,
+            readonly=True,
+            lock=False,
+            readahead=False,
+            meminit=False)
+
+        if not self.env1 or not self.env2:
+            logger.info(f'cannot open lmdb from {root1} or {root2}')
+            sys.exit(0)
+
+        with self.env1.begin(write=False) as txn:
+            nSamples1 = int(txn.get('num-samples'.encode('ascii')))
+
+        with self.env2.begin(write=False) as txn:
+            nSamples2 = int(txn.get('num-samples'.encode('ascii')))
+            
+        self.nSamples = nSamples1 + nSamples2
+
+        self.cutoff = nSamples1
+
+        self.transform = transform
+        self.target_transform = target_transform
+        self.epochs = 0
+
+    def __len__(self):
+        return self.nSamples
+
+    def set_epochs(self, epoch):
+        self.epochs = epoch
+
+    def __getitem__(self, index):
+        assert index <= len(self), 'index range error'
+        if index >= self.cutoff:
+            index = index - self.cutoff
+            env = self.env2
+        else:
+            env = self.env1
+        with env.begin(write=False) as txn:
             data_key = f'data-{index:09d}'.encode('ascii')
             data_enc = txn.get(data_key)
             if not data_enc:

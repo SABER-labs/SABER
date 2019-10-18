@@ -33,8 +33,7 @@ def ConvBnNonLinearity(in_channels, out_channels, kernel_width, stride, non_line
 	p = kernel_width//2 if dilation == 1 else kernel_width - 1
 	if dropout > 0:
 		return nn.Sequential(
-			nn.Conv1d(in_channels, out_channels, kernel_width,
-					  stride, p, bias=bias, dilation=dilation),
+			DepthWiseSeperableConv(in_channels, out_channels, kernel_width, stride, dilation=dilation, bias=bias),
 			nn.BatchNorm1d(out_channels),
 			NON_LINEARITY[non_linear],
 			nn.Dropout(dropout)
@@ -42,8 +41,7 @@ def ConvBnNonLinearity(in_channels, out_channels, kernel_width, stride, non_line
 
 	else:
 		return nn.Sequential(
-			nn.Conv1d(in_channels, out_channels, kernel_width,
-					  stride, p, bias=bias, dilation=dilation),
+			DepthWiseSeperableConv(in_channels, out_channels, kernel_width, stride, dilation=dilation, bias=bias),
 			nn.BatchNorm1d(out_channels),
 			NON_LINEARITY[non_linear]
 		)
@@ -63,7 +61,7 @@ def Conv1x1Bn(in_channels, out_channels, non_linear=None, bias=False):
 		]
 
 class DepthWiseSeperableConv(nn.Module):
-	def __init__(self, in_channels, out_channels, kernel_size=1, stride=1, padding=0, dilation=1, bias=False):
+	def __init__(self, in_channels, out_channels, kernel_size=1, stride=1, dilation=1, bias=False):
 		super(DepthWiseSeperableConv, self).__init__()
 		p = kernel_size//2 if dilation == 1 else kernel_size - 1
 		self.conv1 = nn.Conv1d(in_channels, in_channels, kernel_size,
@@ -91,17 +89,26 @@ class QuartzBlock(nn.Module):
 
 		self.pointwise_batchnorm = nn.Sequential(
 			*Conv1x1Bn(in_channels, out_channels))
-		self.non_linearity = nn.Sequential(NON_LINEARITY[non_linear], nn.Dropout(dropout))
+		if dropout > 0:
+			self.non_linearity = nn.Sequential(NON_LINEARITY[non_linear], nn.Dropout(dropout))
+		else:
+			self.non_linearity = NON_LINEARITY[non_linear]
 		self.conv = nn.Sequential(*conv, nn.Conv1d(out_channels, out_channels, kernel_size, stride, kernel_size//2) , nn.BatchNorm1d(out_channels))
 
 	def _get_standard_quartz_arm(self, in_channels, out_channels, kernel_size, stride, non_linear='ReLU', dropout=0.2):
-		return [
-			nn.Conv1d(in_channels, out_channels, kernel_size,
-					  stride, kernel_size//2),
-			nn.BatchNorm1d(out_channels),
-			NON_LINEARITY[non_linear],
-			nn.Dropout(dropout)
-		]
+		if dropout > 0:
+			return [
+				DepthWiseSeperableConv(in_channels, out_channels, kernel_size, stride),
+				nn.BatchNorm1d(out_channels),
+				NON_LINEARITY[non_linear],
+				nn.Dropout(dropout)
+			]
+		else:
+			return [
+				DepthWiseSeperableConv(in_channels, out_channels, kernel_size, stride),
+				nn.BatchNorm1d(out_channels),
+				NON_LINEARITY[non_linear]
+			]
 
 	def forward(self, input):
 		arm1 = self.conv(input)
@@ -110,7 +117,7 @@ class QuartzBlock(nn.Module):
 
 
 class QuartzRepeats(nn.Module):
-	def __init__(self, in_channels, out_channels, kernel_size, stride, dropout=0.2, non_linear='ReLU', n_branches=2):
+	def __init__(self, in_channels, out_channels, kernel_size, stride, dropout=0.0, non_linear='ReLU', n_branches=3):
 		super(QuartzRepeats, self).__init__()
 		conv = []
 		for i in range(n_branches):
@@ -126,25 +133,25 @@ class QuartzRepeats(nn.Module):
 		return self.conv(input)
 
 
-class QuartzNet(nn.Module):
-	def __init__(self, num_classes=128):
+class ASRModel(nn.Module):
+	def __init__(self, input_features=80, num_classes=128):
 		super().__init__()
 		self.conv_block1 = ConvBnNonLinearity(
-			80, 256, 11, 2, non_linear='Swish', dropout=0.2)
+			input_features, 256, 33, 2, non_linear='Swish', dropout=0)
 		self.quartz_block1 = nn.Sequential(QuartzRepeats(
-			256, 256, 11, 1, dropout=0.2, non_linear='Swish'), nn.AvgPool1d(2, 2))
+			256, 256, 33, 1, dropout=0, non_linear='Swish'), nn.AvgPool1d(2, 2))
 		self.quartz_block2 = nn.Sequential(QuartzRepeats(
-			256, 384, 13, 1, dropout=0.2, non_linear='Swish'), nn.AvgPool1d(2, 2))
+			256, 256, 39, 1, dropout=0, non_linear='Swish'), nn.AvgPool1d(2, 2))
 		self.quartz_block3 = nn.Sequential(QuartzRepeats(
-			384, 512, 17, 1, dropout=0.2, non_linear='Swish'))
+			256, 512, 51, 1, dropout=0, non_linear='Swish'))
 		self.quartz_block4 = nn.Sequential(QuartzRepeats(
-			512, 640, 21, 1, dropout=0.3, non_linear='Swish'))
+			512, 512, 63, 1, dropout=0, non_linear='Swish'))
 		self.quartz_block5 = nn.Sequential(QuartzRepeats(
-			640, 768, 25, 1, dropout=0.3, non_linear='Swish'))
+			512, 512, 75, 1, dropout=0, non_linear='Swish'))
 		self.conv_block2 = ConvBnNonLinearity(
-			768, 896, 29, 1, non_linear='Swish', dilation=2, dropout=0.4)
+			512, 512, 87, 1, non_linear='Swish', dilation=2, dropout=0)
 		self.conv_block3 = ConvBnNonLinearity(
-			896, 1024, 1, 1, non_linear='Swish', dropout=0.4)
+			512, 1024, 1, 1, non_linear='Swish', dropout=0)
 		self.conv_block4 = nn.Conv1d(1024, num_classes, 1, 1, bias=True)
 		self._initialize_weights()
 
@@ -182,13 +189,14 @@ class QuartzNet(nn.Module):
 
 
 if __name__ == '__main__':
-	print("QuartzNet Summary")
+	print("ASRModel Summary")
 	from torchsummary import summary
 	from time import time
 	device = 'cuda' if torch.cuda.is_available() else 'cpu'
-	net = QuartzNet().to(device)
-	summary(net, (80, 500), batch_size=1, device=device)
-	image = torch.randn(1, 80, 500).to(device)
+	input_features = 80
+	net = ASRModel(input_features=input_features).to(device)
+	summary(net, (input_features, 400), batch_size=1, device=device)
+	image = torch.randn(1, input_features, 400).to(device)
 	start = time()
 	y = net(image)
 	print(y.shape)

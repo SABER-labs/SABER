@@ -37,16 +37,17 @@ def _SplitChannels(channels, num_groups):
     split_channels[0] += channels - sum(split_channels)
     return split_channels
 
-def Conv3x3Bn(in_channels, out_channels, stride, non_linear='ReLU'):
+def Conv3x3Bn(in_channels, out_channels, stride, non_linear='ReLU', kernel_size=3):
     return nn.Sequential(
-        nn.Conv1d(in_channels, out_channels, 3, stride, 1, bias=False),
+        nn.Conv1d(in_channels, out_channels, kernel_size, stride, kernel_size//2, bias=False),
         nn.BatchNorm1d(out_channels),
         NON_LINEARITY[non_linear]
     )
 
-def Conv1x1Bn(in_channels, out_channels, non_linear='ReLU'):
+def Conv1x1Bn(in_channels, out_channels, non_linear='ReLU', kernel_width=1, dilation=1, stride=1, bias=False):
+    p = kernel_width//2 if dilation == 1 else kernel_width - 1
     return nn.Sequential(
-        nn.Conv1d(in_channels, out_channels, 1, 1, 0, bias=False),
+        nn.Conv1d(in_channels, out_channels, kernel_width, stride, padding=p, dilation=dilation, bias=bias),
         nn.BatchNorm1d(out_channels),
         NON_LINEARITY[non_linear]
     )
@@ -150,55 +151,35 @@ class MixNetBlock(nn.Module):
         else:
             return self.conv(x)
 
-class MixNet(nn.Module):
-    # [in_channels, out_channels, kernel_size, stride, expand_ratio, non_linear, se_ratio]
-    mixnet_speech = [
-        (128, 128, [11], 2, 1, 'ReLU', 0.0),
-        (128, 128+32, [11, 13], 1, 2, 'ReLU', 0.0),
-        (128+32, 128+32, [9, 11, 13], 1, 2, 'ReLU', 0.0),
-        (128+32, 128+32, [9, 11, 13], 1, 2, 'Swish', 0.25),
-        (128+32, 128+32, [9, 11, 13], 1, 2, 'Swish', 0.25),
-        (128+32, 128+32*2, [9, 11, 13], 2, 2, 'Swish', 0.25),
-        (128+32*2, 128+32*2, [9, 11, 13], 1, 2, 'Swish', 0.25),
-        (128+32*2, 128+32*2, [9, 11, 13], 1, 2, 'Swish', 0.25),
-        (128+32*2, 128+32*2, [9, 11, 13], 2, 2, 'Swish', 0.25),
-        (128+32*2, 128+32*3, [13, 15, 17], 1, 2, 'Swish', 0.25),
-        (128+32*3, 128+32*3, [13, 15, 17], 1, 2, 'Swish', 0.25),
-        (128+32*3, 128+32*3, [13, 15, 17], 1, 2, 'Swish', 0.25),
-        (128+32*3, 128+32*3, [13, 15, 17], 1, 2, 'Swish', 0.25),
-        (128+32*3, 128+32*4, [13, 15, 17], 1, 2, 'Swish', 0.25),
-        (128+32*4, 128+32*4, [15, 17, 19], 1, 2, 'Swish', 0.25),
-        (128+32*4, 128+32*4, [15, 17, 19], 1, 2, 'Swish', 0.25),
-        (128+32*4, 128+32*4, [15, 17, 19], 1, 2, 'Swish', 0.25),
-        (128+32*4, 128+32*5, [17, 19, 21], 1, 2, 'Swish', 0.25),
-        (128+32*5, 128+32*5, [17, 19, 21], 1, 2, 'Swish', 0.25),
-        (128+32*5, 128+32*5, [17, 19, 21], 1, 2, 'Swish', 0.25),
-        (128+32*5, 128+32*6, [19, 21, 23], 1, 2, 'Swish', 0.25),
-        (128+32*6, 128+32*6, [19, 21, 23], 1, 2, 'Swish', 0.25),
-        (128+32*6, 128+32*6, [19, 21, 23], 1, 2, 'Swish', 0.25),
-        (128+32*6, 128+32*6, [19, 21, 23], 1, 2, 'Swish', 0.25),
-        (128+32*6, 128+32*7, [21, 23, 25], 1, 2, 'Swish', 0.25),
-        (128+32*7, 128+32*7, [21, 23, 25], 1, 2, 'Swish', 0.25),
-        (128+32*7, 128+32*7, [21, 23, 25], 1, 2, 'Swish', 0.25),
-        (128+32*7, 128+32*7, [21, 23, 25], 1, 2, 'Swish', 0.25),
-        (128+32*7, 128+32*8, [23, 25, 27], 1, 2, 'Swish', 0.25),
-        (128+32*8, 128+32*8, [23, 25, 27], 1, 2, 'Swish', 0.25),
-        (128+32*8, 128+32*8, [23, 25, 27], 1, 2, 'Swish', 0.25),
-        (128+32*8, 128+32*8, [23, 25, 27], 1, 2, 'Swish', 0.25),
-        (128+32*8, 128+32*8, [23, 25, 27], 1, 2, 'Swish', 0.25),
-        (128+32*8, 128+32*8, [23, 25, 27], 1, 2, 'Swish', 0.25),
-        (128+32*8, 128+32*9, [25, 27, 29], 1, 2, 'Swish', 0.25),
-        (128+32*9, 128+32*9, [25, 27, 29], 1, 2, 'Swish', 0.25),
-        (128+32*9, 128+32*9, [25, 27, 29], 1, 2, 'Swish', 0.25),
-        (128+32*9, 128+32*9, [25, 27, 29], 1, 2, 'Swish', 0.25),
-        (128+32*9, 128+32*9, [25, 27, 29], 1, 2, 'Swish', 0.25)
-    ]
+def custom_range(start, num, inc):
+    return list(range(start, start + (num * inc), inc))
 
-    def __init__(self, num_classes=512, depth_multiplier=1.0):
-        super(MixNet, self).__init__()
+def form_stage(in_channel, out_channel, start_kernel, stride, growth, non_linearity, squeeze_factor, repeats):
+    params = [(in_channel, out_channel, custom_range(start_kernel, 5, 2), stride, growth, non_linearity, squeeze_factor)]
+    for i in range(1, repeats):
+        params.append((out_channel, out_channel, custom_range(start_kernel, 5, 2), 1, growth, non_linearity, squeeze_factor))
+    return params
+
+class ASRModel(nn.Module):
+    # [in_channels, out_channels, kernel_size, stride, expand_ratio, non_linear, se_ratio]
+    start = 128
+    filters = [29, 35, 47, 59, 71]
+    repeats = 3
+    mixnet_speech = []
+    in_filter = start
+    for i, filter_i in enumerate(filters):
+        stride = 2 if i < 2 else 1
+        non_linearity = 'ReLU' if i == 0 else 'Swish'
+        growth = 1 if i == 0 else 5
+        squeeze_factor = 0.0 if i == 0 else 0.5
+        mixnet_speech.extend(form_stage(in_filter, start * (i + 1), filter_i, stride, growth, non_linearity, squeeze_factor, repeats))
+        in_filter = start * (i + 1)
+
+    def __init__(self, input_features=80, num_classes=128, depth_multiplier=1.2):
+        super(ASRModel, self).__init__()
         config = self.mixnet_speech
         stem_channels = 128
-        dropout_rate = 0.4
+        dropout_rate = 0.1
 
         self._stage_out_channels = int(1024)
 
@@ -212,7 +193,7 @@ class MixNet(nn.Module):
             config[i] = tuple(conf_ls)
 
         # stem convolution
-        self.stem_conv = Conv3x3Bn(80, stem_channels, 2)
+        self.stem_conv = Conv3x3Bn(input_features, stem_channels, 2, kernel_size=27)
 
         # building MixNet blocks
         layers = []
@@ -221,18 +202,20 @@ class MixNet(nn.Module):
         self.layers = nn.Sequential(*layers)
 
         # last several layers
-        self.head_conv = Conv1x1Bn(config[-1][1], self._stage_out_channels, non_linear='Swish')
-        self.dropout = nn.Dropout(dropout_rate)
-        self.classifier = nn.Linear(self._stage_out_channels, num_classes)
+        self.head_conv1 = Conv1x1Bn(config[-1][1], self._stage_out_channels, kernel_width=87, non_linear='Swish', dilation=2)
+        self.head_conv2 = Conv1x1Bn(self._stage_out_channels, self._stage_out_channels, non_linear='Swish')
+        # self.dropout = nn.Dropout(dropout_rate)
+
+        self.classifier = nn.Conv1d(self._stage_out_channels, num_classes, 1, 1, bias=True)
         self._initialize_weights()
 
     def forward(self, x):
         x = self.stem_conv(x)
         x = self.layers(x)
-        x = self.head_conv(x)
-        x = x.permute(0, 2, 1)
+        x = self.head_conv1(x)
+        x = self.head_conv2(x)
+        # x = self.dropout(x)
         x = self.classifier(x)
-        x = self.dropout(x)
         return x
 
     def _initialize_weights(self):
@@ -247,27 +230,20 @@ class MixNet(nn.Module):
                 m.bias.data.zero_()
             elif isinstance(m, nn.Linear):
                 n = m.weight.size(1)
-                m.weight.data.normal_(0, math.sqrt(2.0 / n))
+                m.weight.data.normal_(0, 0.01)
                 m.bias.data.zero_()
 
 
 if __name__ == '__main__':
-    # import time
-    # model = MixNet(net_type='mixnet_l')
-    # print('Total params: %.2fM' % (sum(p.numel() for p in model.parameters())/1000000.0))
-    # input = Variable(torch.randn(64, 80, 3001))
-    # start = time.time()
-    # y = model(input)
-    # print(f"Time taken for model inference was {time.time() - start:.3f}s")
-    # print(y.shape)
-    print("Mixnet Summary")
-    from torchsummary import summary
-    from time import time
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    net = MixNet().to(device)
-    summary(net, (80, 3001), batch_size=1, device=device)
-    image = torch.randn(1, 80, 3001).to(device)
-    start = time()
-    y = net(image)
-    print(y.shape)
-    print(f"time taken is {time()-start:.3f}s")
+	print("ASRModel Summary")
+	from torchsummary import summary
+	from time import time
+	device = 'cuda' if torch.cuda.is_available() else 'cpu'
+	input_features = 80
+	net = ASRModel(input_features=input_features).to(device)
+	summary(net, (input_features, 400), batch_size=1, device=device)
+	image = torch.randn(1, input_features, 400).to(device)
+	start = time()
+	y = net(image)
+	print(y.shape)
+	print(f"time taken is {time()-start:.3f}s")

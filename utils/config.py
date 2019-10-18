@@ -34,18 +34,21 @@ vocab_size = 128
 # Training configs
 gpu_id = '0,1,2'
 workers = 30
-train_batch_size = 8 * len(gpu_id.split(","))
-epochs = 100
+train_batch_size = 16 * len(gpu_id.split(","))
+epochs = 400
 lr = 1e-3
-lr_decay_step = [int(epochs * 0.15), int(epochs * 0.75)]
+lr_decay_step = [int(epochs * 0.25), int(epochs * 0.75)]
+cyclic_lr_milestones = [10, 25, 60, 80, 120, 180, 240, 320, 400, 480]
+cyclic_lr_decay = [60, 120, 240, 480, 960]
+cyclic_lr_min = 1e-4
 lr_gamma = 0.1
 checkpoint_root = 'checkpoints'
 checkpoint_version = ''
 best_model_version = 'best_saber.pth'
 
 # UDA hyper-params
-augment_warmup_epoch = int(epochs * 0.15)
-unsupervision_warmup_epoch = int(epochs * 0.125)
+augment_warmup_epoch = int(epochs * 0.1)
+unsupervision_warmup_epoch = int(epochs * 0.1)
 
 # Cutout hyper-params
 max_sprinkles_percent = 0.125

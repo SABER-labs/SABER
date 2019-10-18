@@ -50,9 +50,6 @@ class CustomCTCLoss(nn.Module):
 
     def forward(self, probs, targets, input_lengths, target_lengths):
         probs = probs.permute(2, 0, 1)
-        # assert(targets.shape[0] ==  target_lengths.sum().item())
-        # assert(targets.max().item() <= 256)
-        # assert(torch.all(target_lengths < probs.shape[0]).item())
         log_probs = torch.log_softmax(probs, dim=2)
         return F.ctc_loss(log_probs, targets, input_lengths, target_lengths, zero_infinity=True)
 

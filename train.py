@@ -1,12 +1,12 @@
 from utils import config
 import os
 import torch
-from models.quartznet import QuartzNet
+from models.mixnet import ASRModel
 from utils.logger import logger
 from functools import partial
 from datasets.librispeech import allign_collate, align_collate_unlabelled, allign_collate_val
-from utils.lmdb import lmdbDataset
-from utils.training_utils import MixDatasets, save_checkpoint, BestMeter
+from utils.lmdb import lmdbDataset, lmdbDoubleDataset
+from utils.training_utils import save_checkpoint, BestMeter
 from utils.config import lmdb_root_path, workers, train_batch_size, unsupervision_warmup_epoch, log_path, epochs
 import ignite
 from ignite.engine import Events, Engine
@@ -16,6 +16,8 @@ from ignite.handlers import ModelCheckpoint, Timer
 from ignite.contrib.handlers.tensorboard_logger import *
 from ignite.contrib.handlers.tqdm_logger import ProgressBar
 from utils.radam import RAdam
+from utils.cyclicLR import CyclicCosAnnealingLR
+from utils.loss_scaler import DynamicLossScaler
 from utils.aggloss import ACELoss, UDALoss, CustomCTCLoss, FocalACELoss, FocalUDALoss
 from utils.training_utils import load_checkpoint
 import numpy as np
@@ -39,22 +41,22 @@ def init_parms():
 
 def main():
     params = init_parms()
-    start_epoch = params['start_epoch']
     device = params.get('device')
-    model = QuartzNet(num_classes=config.vocab_size).to(device)
+    model = ASRModel(input_features=config.num_mel_banks ,num_classes=config.vocab_size).to(device)
     model = torch.nn.DataParallel(model)
-    optimizer = RAdam(model.parameters(), lr=config.lr)
+    optimizer = RAdam(model.parameters(), lr=config.lr, eps=1e-8)
     load_checkpoint(model, optimizer, params)
+    start_epoch = params['start_epoch']
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=config.lr_decay_step, gamma=config.lr_gamma, last_epoch=start_epoch)
-    # sup_criterion = FocalACELoss()
-    sup_criterion = CustomCTCLoss()
+    # scheduler = CyclicCosAnnealingLR(optimizer, milestones=config.cyclic_lr_milestones, decay_milestones=config.cyclic_lr_decay, eta_min= config.cyclic_lr_min, last_epoch=start_epoch)
+    sup_criterion = ACELoss()
     unsup_criterion = UDALoss()
     tb_logger = TensorboardLogger(log_dir=log_path)
     pbar = ProgressBar(persist=True, desc="Training")
     pbar_valid = ProgressBar(persist=True, desc="Validation Clean")
     pbar_valid_other = ProgressBar(persist=True, desc="Validation Other")
     timer = Timer(average=True)
-    best_meter = BestMeter()
+    best_meter = params.get('best_stats', BestMeter())
 
     trainCleanPath = os.path.join(lmdb_root_path, 'train-labelled')
     trainOtherPath = os.path.join(lmdb_root_path, 'train-unlabelled')
@@ -62,23 +64,19 @@ def main():
     testOtherPath = os.path.join(lmdb_root_path, 'test-other')
     devOtherPath = os.path.join(lmdb_root_path, 'dev-other')
 
-    train_clean_libri = lmdbDataset(root=trainCleanPath)
-    train_other_libri = lmdbDataset(root=trainOtherPath)
+    # train_clean = lmdbDataset(root=trainCleanPath)
+    # train_other = lmdbDoubleDataset(root1=trainOtherPath, root2=devOtherPath)
+
+    train_clean = lmdbDoubleDataset(root1=trainCleanPath, root2=trainOtherPath)
+    train_other = lmdbDataset(root=devOtherPath)
+
     test_clean = lmdbDataset(root=testCleanPath)
     test_other = lmdbDataset(root=testOtherPath)
-    dev_other_libri = lmdbDataset(root=devOtherPath)
-
-    train_clean = MixDatasets([train_clean_libri, train_other_libri])
-    train_other = dev_other_libri
-
-    # train_clean = train_clean_libri
-    # train_other = MixDatasets([train_other_libri, dev_other_libri])
 
     logger.info(f'Loaded Train & Test Datasets, train_labbeled={len(train_clean)}, train_unlabbeled={len(train_other)}, test_clean={len(test_clean)} & test_other={len(test_other)} examples')
 
     def train_update_function(engine, _):
         optimizer.zero_grad()
-        model.zero_grad()
 
         # Supervised gt, pred
         imgs_sup, labels_sup, label_lengths = next(engine.state.train_loader_labbeled)
@@ -100,11 +98,9 @@ def main():
         # final_loss = ((1 - alpha) * sup_loss) + (alpha * unsup_loss)
 
         final_loss = sup_loss
-
         final_loss.backward()
-        # torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
-        # torch.nn.utils.clip_grad_value_(model.parameters(), 5.0)
         optimizer.step()
+
         return final_loss.item()
 
     @torch.no_grad()
@@ -113,10 +109,14 @@ def main():
         y_pred = model(img.to(device))
         return (y_pred, labels, label_lengths)
 
-    train_loader_labbeled_loader = torch.utils.data.DataLoader(train_clean, batch_size=train_batch_size, shuffle=True, num_workers=config.workers, pin_memory=False, collate_fn=partial(allign_collate, device=device))
-    train_loader_unlabbeled_loader = torch.utils.data.DataLoader(train_other, batch_size=train_batch_size, shuffle=True, num_workers=config.workers, pin_memory=False, collate_fn=partial(align_collate_unlabelled, device=device))
-    test_loader_clean = torch.utils.data.DataLoader(test_clean, batch_size=train_batch_size, shuffle=False, num_workers=config.workers, pin_memory=False, collate_fn=partial(allign_collate_val, device=device))
-    test_loader_other = torch.utils.data.DataLoader(test_other, batch_size=train_batch_size, shuffle=False, num_workers=config.workers, pin_memory=False, collate_fn=partial(allign_collate_val, device=device))
+    allign_collate_partial = partial(allign_collate, device=device)
+    align_collate_unlabelled_partial = partial(align_collate_unlabelled, device=device)
+    allign_collate_val_partial = partial(allign_collate_val, device=device)
+
+    train_loader_labbeled_loader = torch.utils.data.DataLoader(train_clean, batch_size=train_batch_size, shuffle=True, num_workers=config.workers, pin_memory=False, collate_fn=allign_collate_partial)
+    train_loader_unlabbeled_loader = torch.utils.data.DataLoader(train_other, batch_size=train_batch_size * 4, shuffle=True, num_workers=config.workers, pin_memory=False, collate_fn=align_collate_unlabelled_partial)
+    test_loader_clean = torch.utils.data.DataLoader(test_clean, batch_size=train_batch_size, shuffle=False, num_workers=config.workers, pin_memory=False, collate_fn=allign_collate_val_partial)
+    test_loader_other = torch.utils.data.DataLoader(test_other, batch_size=train_batch_size, shuffle=False, num_workers=config.workers, pin_memory=False, collate_fn=allign_collate_val_partial)
     trainer = Engine(train_update_function)
     evaluator_clean = Engine(validate_update_function)
     evaluator_other = Engine(validate_update_function)
@@ -181,8 +181,8 @@ def main():
         wer = metrics['wer']
         cer = metrics['cer']
         epoch = trainer.state.epoch
-        best_meter.update(wer, cer, epoch)
         save_checkpoint(model, optimizer, best_meter, wer, cer, epoch)
+        best_meter.update(wer, cer, epoch)
 
     trainer.run(train_loader_labbeled_loader, max_epochs=epochs)
     tb_logger.close()

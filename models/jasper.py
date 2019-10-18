@@ -1,200 +1,196 @@
-# Copyright (c) 2019 NVIDIA Corporation
+import torch
 import torch.nn as nn
-
-from nemo.backends.pytorch.nm import TrainableNM
-from nemo.core.neural_types import *
-from .jasper_parts import JasperBlock, jasper_activations, init_weights
-
-
-class JasperEncoder(TrainableNM):
-    """
-    Jasper Encoder creates the pre-processing (prologue), Jasper convolution
-    block, and the first 3 post-processing (epilogue) layers as described in
-    Jasper (https://arxiv.org/abs/1904.03288)
-
-    Args:
-        jasper (list): A list of dictionaries. Each element in the list
-            represents the configuration of one Jasper Block. Each element
-            should contain::
-
-                {
-                    # Required parameters
-                    'filters' (int) # Number of output channels,
-                    'repeat' (int) # Number of sub-blocks,
-                    'kernel' (int) # Size of conv kernel,
-                    'stride' (int) # Conv stride
-                    'dilation' (int) # Conv dilation
-                    'dropout' (float) # Dropout probability
-                    'residual' (bool) # Whether to use residual or not.
-                    # Optional parameters
-                    'residual_dense' (bool) # Whether to use Dense Residuals
-                        # or not. 'residual' must be True for 'residual_dense'
-                        # to be enabled.
-                        # Defaults to False.
-                    'separable' (bool) # Whether to use separable convolutions.
-                        # Defaults to False
-                    'groups' (int) # Number of groups in each conv layer.
-                        # Defaults to 1
-                    'heads' (int) # Sharing of separable filters
-                        # Defaults to -1
-                    'tied' (bool)  # Whether to use the same weights for all
-                        # sub-blocks.
-                        # Defaults to False
-                }
-
-        activation (str): Activation function used for each sub-blocks. Can be
-            one of ["hardtanh", "relu", "selu"].
-        feat_in (int): Number of channels being input to this module
-        normalization_mode (str): Normalization to be used in each sub-block.
-            Can be one of ["batch", "layer", "instance", "group"]
-            Defaults to "batch".
-        residual_mode (str): Type of residual connection.
-            Can be "add" or "max".
-            Defaults to "add".
-        norm_groups (int): Number of groups for "group" normalization type.
-            If set to -1, number of channels is used.
-            Defaults to -1.
-        conv_mask (bool): Controls the use of sequence length masking prior
-            to convolutions.
-            Defaults to True.
-        frame_splicing (int): Defaults to 1.
-        init_mode (str): Describes how neural network parameters are
-            initialized. Options are ['xavier_uniform', 'xavier_normal',
-            'kaiming_uniform','kaiming_normal'].
-            Defaults to "xavier_uniform".
-    """
-
-    @staticmethod
-    def create_ports():
-        input_ports = {
-            "audio_signal": NeuralType({0: AxisType(BatchTag),
-                                        1: AxisType(SpectrogramSignalTag),
-                                        2: AxisType(ProcessedTimeTag)}),
-            "length": NeuralType({0: AxisType(BatchTag)})
-        }
-
-        output_ports = {
-            "outputs": NeuralType({
-                0: AxisType(BatchTag),
-                1: AxisType(EncodedRepresentationTag),
-                2: AxisType(ProcessedTimeTag),
-            }),
-
-            "encoded_lengths": NeuralType({0: AxisType(BatchTag)})
-        }
-        return input_ports, output_ports
-
-    def __init__(
-            self, *,
-            jasper,
-            activation,
-            feat_in,
-            normalization_mode="batch",
-            residual_mode="add",
-            norm_groups=-1,
-            conv_mask=True,
-            frame_splicing=1,
-            init_mode='xavier_uniform',
-            **kwargs
-    ):
-        TrainableNM.__init__(self, **kwargs)
-
-        activation = jasper_activations[activation]()
-        feat_in = feat_in * frame_splicing
-
-        residual_panes = []
-        encoder_layers = []
-        self.dense_residual = False
-        for lcfg in jasper:
-            dense_res = []
-            if lcfg.get('residual_dense', False):
-                residual_panes.append(feat_in)
-                dense_res = residual_panes
-                self.dense_residual = True
-            groups = lcfg.get('groups', 1)
-            separable = lcfg.get('separable', False)
-            tied = lcfg.get('tied', False)
-            heads = lcfg.get('heads', -1)
-            encoder_layers.append(
-                JasperBlock(feat_in,
-                            lcfg['filters'],
-                            repeat=lcfg['repeat'],
-                            kernel_size=lcfg['kernel'],
-                            stride=lcfg['stride'],
-                            dilation=lcfg['dilation'],
-                            dropout=lcfg['dropout'],
-                            residual=lcfg['residual'],
-                            groups=groups,
-                            separable=separable,
-                            heads=heads,
-                            residual_mode=residual_mode,
-                            normalization=normalization_mode,
-                            norm_groups=norm_groups,
-                            tied=tied,
-                            activation=activation,
-                            residual_panes=dense_res,
-                            conv_mask=conv_mask))
-            feat_in = lcfg['filters']
-
-        # self.featurizer = FeatureFactory.from_config(cfg['input'])
-        self.encoder = nn.Sequential(*encoder_layers)
-        self.apply(lambda x: init_weights(x, mode=init_mode))
-        self.to(self._device)
-
-    def forward(self, audio_signal, length):
-        s_input, length = self.encoder(([audio_signal], length))
-        return s_input[-1], length
+import torch.nn.functional as F
+from torch.autograd import Variable
+import math
 
 
-class JasperDecoderForCTC(TrainableNM):
-    """
-    Jasper Decoder creates the final layer in Jasper that maps from the outputs
-    of Jasper Encoder to the vocabulary of interest.
+class HardSigmoid(nn.Module):
+	def __init__(self, inplace=True):
+		super(HardSigmoid, self).__init__()
+		self.relu6 = nn.ReLU6(inplace=inplace)
 
-    Args:
-        feat_in (int): Number of channels being input to this module
-        num_classes (int): Number of characters in ASR model's vocab/labels.
-            This count should not include the CTC blank symbol.
-        init_mode (str): Describes how neural network parameters are
-            initialized. Options are ['xavier_uniform', 'xavier_normal',
-            'kaiming_uniform','kaiming_normal'].
-            Defaults to "xavier_uniform".
-    """
+	def forward(self, x):
+		return (self.relu6(x+3)) / 6
 
-    @staticmethod
-    def create_ports():
-        input_ports = {
-            "encoder_output": NeuralType(
-                {0: AxisType(BatchTag),
-                 1: AxisType(EncodedRepresentationTag),
-                 2: AxisType(ProcessedTimeTag)})}
-        output_ports = {
-            "output": NeuralType({
-                0: AxisType(BatchTag),
-                1: AxisType(TimeTag),
-                2: AxisType(ChannelTag)
-            })}
-        return input_ports, output_ports
 
-    def __init__(
-            self, *,
-            feat_in,
-            num_classes,
-            init_mode="xavier_uniform",
-            **kwargs
-    ):
-        TrainableNM.__init__(self, **kwargs)
+class HardSwish(nn.Module):
+	def __init__(self, inplace=True):
+		super(HardSwish, self).__init__()
+		self.hsigmoid = HardSigmoid(inplace=inplace)
 
-        self._feat_in = feat_in
-        # Add 1 for blank char
-        self._num_classes = num_classes + 1
+	def forward(self, x):
+		return x * self.hsigmoid(x)
 
-        self.decoder_layers = nn.Sequential(
-            nn.Conv1d(self._feat_in, self._num_classes,
-                      kernel_size=1, bias=True),
-            nn.LogSoftmax(dim=1))
-        self.apply(lambda x: init_weights(x, mode=init_mode))
-        self.to(self._device)
+NON_LINEARITY = {
+	'ReLU': nn.ReLU(inplace=True),
+	'Swish': HardSwish(),
+	'Sigmoid': HardSigmoid()
+}
 
-    def forward(self, encoder_output):
-        return self.decoder_layers(encoder_output).transpose(1, 2)
+
+def ConvBnNonLinearity(in_channels, out_channels, kernel_width, stride, non_linear='ReLU', dilation=1, dropout=0, bias=False):
+	p = kernel_width//2 if dilation == 1 else kernel_width - 1
+	if dropout > 0:
+		return nn.Sequential(
+			nn.Conv1d(in_channels, out_channels, kernel_width,
+					  stride, p, bias=bias, dilation=dilation),
+			nn.BatchNorm1d(out_channels),
+			NON_LINEARITY[non_linear],
+			nn.Dropout(dropout)
+		)
+
+	else:
+		return nn.Sequential(
+			nn.Conv1d(in_channels, out_channels, kernel_width,
+					  stride, p, bias=bias, dilation=dilation),
+			nn.BatchNorm1d(out_channels),
+			NON_LINEARITY[non_linear]
+		)
+
+
+def Conv1x1Bn(in_channels, out_channels, non_linear=None, bias=False):
+	if non_linear is not None:
+		return [
+			nn.Conv1d(in_channels, out_channels, 1, 1, 0, 1, 1, bias=bias),
+			nn.BatchNorm1d(out_channels),
+			NON_LINEARITY[non_linear]
+		]
+	else:
+		return [
+			nn.Conv1d(in_channels, out_channels, 1, 1, 0, 1, 1, bias=bias),
+			nn.BatchNorm1d(out_channels),
+		]
+
+class DepthWiseSeperableConv(nn.Module):
+	def __init__(self, in_channels, out_channels, kernel_size=1, stride=1, padding=0, dilation=1, bias=False):
+		super(DepthWiseSeperableConv, self).__init__()
+		p = kernel_size//2 if dilation == 1 else kernel_size - 1
+		self.conv1 = nn.Conv1d(in_channels, in_channels, kernel_size,
+							   stride, p, dilation, groups=in_channels, bias=bias)
+		self.pointwise = nn.Conv1d(
+			in_channels, out_channels, 1, 1, 0, 1, 1, bias=bias)
+
+	def forward(self, x):
+		x = self.conv1(x)
+		x = self.pointwise(x)
+		return x
+
+
+class QuartzBlock(nn.Module):
+	def __init__(self, in_channels, out_channels, kernel_size, stride, non_linear='ReLU', n_repeats=5, dropout=0.2):
+		super(QuartzBlock, self).__init__()
+		conv = []
+		for i in range(n_repeats):
+			if i == 0:
+				conv.extend(self._get_standard_quartz_arm(
+					in_channels, out_channels, kernel_size, stride, non_linear=non_linear, dropout=dropout))
+			else:
+				conv.extend(self._get_standard_quartz_arm(
+					out_channels, out_channels, kernel_size, stride, non_linear=non_linear, dropout=dropout))
+
+		self.pointwise_batchnorm = nn.Sequential(
+			*Conv1x1Bn(in_channels, out_channels))
+		self.non_linearity = nn.Sequential(NON_LINEARITY[non_linear], nn.Dropout(dropout))
+		self.conv = nn.Sequential(*conv, nn.Conv1d(out_channels, out_channels, kernel_size, stride, kernel_size//2) , nn.BatchNorm1d(out_channels))
+
+	def _get_standard_quartz_arm(self, in_channels, out_channels, kernel_size, stride, non_linear='ReLU', dropout=0.2):
+		return [
+			nn.Conv1d(in_channels, out_channels, kernel_size,
+					  stride, kernel_size//2),
+			nn.BatchNorm1d(out_channels),
+			NON_LINEARITY[non_linear],
+			nn.Dropout(dropout)
+		]
+
+	def forward(self, input):
+		arm1 = self.conv(input)
+		arm2 = self.pointwise_batchnorm(input)
+		return self.non_linearity(arm1 + arm2)
+
+
+class QuartzRepeats(nn.Module):
+	def __init__(self, in_channels, out_channels, kernel_size, stride, dropout=0.2, non_linear='ReLU', n_branches=2):
+		super(QuartzRepeats, self).__init__()
+		conv = []
+		for i in range(n_branches):
+			if i == 0:
+				conv.append(QuartzBlock(in_channels, out_channels,
+					kernel_size, stride, non_linear=non_linear, n_repeats=5, dropout=dropout))
+			else:
+				conv.append(QuartzBlock(out_channels, out_channels,
+					kernel_size, stride, non_linear=non_linear, n_repeats=5, dropout=dropout))
+		self.conv = nn.Sequential(*conv)
+
+	def forward(self, input):
+		return self.conv(input)
+
+
+class ASRModel(nn.Module):
+	def __init__(self, input_features=80, num_classes=128):
+		super().__init__()
+		self.conv_block1 = ConvBnNonLinearity(
+			input_features, 256, 11, 2, non_linear='Swish', dropout=0.2)
+		self.quartz_block1 = nn.Sequential(QuartzRepeats(
+			256, 256, 11, 1, dropout=0.2, non_linear='Swish'), nn.AvgPool1d(2, 2))
+		self.quartz_block2 = nn.Sequential(QuartzRepeats(
+			256, 384, 13, 1, dropout=0.2, non_linear='Swish'), nn.AvgPool1d(2, 2))
+		self.quartz_block3 = nn.Sequential(QuartzRepeats(
+			384, 512, 17, 1, dropout=0.2, non_linear='Swish'))
+		self.quartz_block4 = nn.Sequential(QuartzRepeats(
+			512, 640, 21, 1, dropout=0.3, non_linear='Swish'))
+		self.quartz_block5 = nn.Sequential(QuartzRepeats(
+			640, 768, 25, 1, dropout=0.3, non_linear='Swish'))
+		self.conv_block2 = ConvBnNonLinearity(
+			768, 896, 29, 1, non_linear='Swish', dilation=2, dropout=0.4)
+		self.conv_block3 = ConvBnNonLinearity(
+			896, 1024, 1, 1, non_linear='Swish', dropout=0.4)
+		self.conv_block4 = nn.Conv1d(1024, num_classes, 1, 1, bias=True)
+		self._initialize_weights()
+
+	def forward(self, x):
+		x = self.conv_block1(x)
+		x = self.quartz_block1(x)
+		x = self.quartz_block2(x)
+		x = self.quartz_block3(x)
+		x = self.quartz_block4(x)
+		x = self.quartz_block5(x)
+		x = self.conv_block2(x)
+		x = self.conv_block3(x)
+		x = self.conv_block4(x)
+		return x
+
+	def _initialize_weights(self):
+		for m in self.modules():
+			if isinstance(m, nn.Conv1d):
+				n = m.kernel_size[0] * m.out_channels
+				m.weight.data.normal_(0, math.sqrt(1.0 / n))
+				if m.bias is not None:
+					m.bias.data.zero_()
+			elif isinstance(m, nn.BatchNorm1d):
+				if m.track_running_stats:
+					m.running_mean.zero_()
+					m.running_var.fill_(1)
+					m.num_batches_tracked.zero_()
+				if m.affine:
+					nn.init.ones_(m.weight)
+					nn.init.zeros_(m.bias)
+			elif isinstance(m, nn.Linear):
+				n = m.weight.size(1)
+				m.weight.data.normal_(0, math.sqrt(1.0 / n))
+				m.bias.data.zero_()
+
+
+if __name__ == '__main__':
+	print("ASRModel Summary")
+	from torchsummary import summary
+	from time import time
+	device = 'cuda' if torch.cuda.is_available() else 'cpu'
+	input_features = 80
+	net = ASRModel(input_features=input_features).to(device)
+	summary(net, (input_features, 400), batch_size=1, device=device)
+	image = torch.randn(1, input_features, 400).to(device)
+	start = time()
+	y = net(image)
+	print(y.shape)
+	print(f"time taken is {time()-start:.3f}s")
