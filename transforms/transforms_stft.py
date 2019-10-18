@@ -114,14 +114,32 @@ class SpecSprinkleOnMel(object):
 
 class SpecBlurring(object):
 
+    def __init__(self, type="mel_spectrogram"):
+        self.type = type
+
     def __call__(self, data):
-        tensor = data['mel_spectrogram'].astype(np.float32)
+        tensor = data[self.type].astype(np.float32)
         tensor = tensor[np.newaxis, :]
         average_blur = iaa.AverageBlur(k=(1, 7)).augment_image
-        median_blur = iaa.MedianBlur(k=(1, 7)).augment_image
+        guassian_blur = iaa.GaussianBlur(sigma=(0.05, 1.5)).augment_image
         motion_blur = iaa.MotionBlur(k=(3, 7)).augment_image
-        random_blur = transforms.RandomChoice([average_blur, median_blur, motion_blur])
-        data['mel_spectrogram'] = random_blur(tensor).squeeze(0)
+        random_blur = transforms.RandomChoice([average_blur, guassian_blur, motion_blur])
+        data[self.type] = random_blur(tensor).squeeze(0)
+        return data
+
+class SpecNoise(object):
+
+    def __init__(self, type="mel_spectrogram"):
+        self.type = type
+
+    def __call__(self, data):
+        tensor = data[self.type].astype(np.float32)
+        tensor = tensor[np.newaxis, :]
+        additive_guasian = iaa.AdditiveGaussianNoise(scale=(0.0, 0.02)).augment_image
+        additive_laplacian = iaa.AdditiveLaplaceNoise(scale=(0.0, 0.02)).augment_image
+        dropout = iaa.Dropout(p=(0.0, 0.1)).augment_image
+        random_blur = transforms.RandomChoice([additive_guasian, additive_laplacian, dropout])
+        data[self.type] = random_blur(tensor).squeeze(0)
         return data
 
 

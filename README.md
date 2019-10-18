@@ -7,7 +7,7 @@ SABER consists of the following components
 
 * An Mixnet based variant of QuartzNet by NVIDIA
 * RAdam optimizer to offset warmup used by SpecAugment
-* SpecAugment and SpecSparkle a cutout inspired variant as Data Augmentations whose parameters linearly increase in a curriculum based approach
+* Data Augmentions used are SpecAugment, SpecSparkle a cutout inspired variant and SpecBlur (a novel approach). Augmentation parameters linearly increase in a curriculum based approach.
 * Aggregated Cross Entropy loss instead of CTC loss for easier training
 * Unsupervised Data Augmentation as means for Semi-Supervised Learning
 
@@ -34,20 +34,6 @@ CUDA_VISIBLE_DEVICES="0,1,2" python3 train.py
 References
 ==========
 
-## Codebases
-
-[DeepSpeech2](https://github.com/PaddlePaddle/DeepSpeech)
-
-[NVIDIA Neural Modules: NeMo](https://github.com/NVIDIA/NeMo)
-
-[RAdam](https://github.com/LiyuanLucasLiu/RAdam)
-
-[LR-Finder](https://github.com/davidtvs/pytorch-lr-finder)
-
-[Cyclical Learning Rate Scheduler With Decay in Pytorch](https://github.com/bluesky314/Cyclical_LR_Scheduler_With_Decay_Pytorch)
-
-[MixNet](https://github.com/romulus0914/MixNet-Pytorch)
-
 ## Papers
 
 [Deep Speech 2: End-to-End Speech Recognition in English and Mandarin](https://arxiv.org/abs/1512.02595)
@@ -73,3 +59,17 @@ References
 [Cycle-consistency training for end-to-end speech recognition](https://arxiv.org/abs/1811.01690)
 
 [RandAugment: Practical data augmentation with no separate search](https://arxiv.org/abs/1909.13719)
+
+## Codebases
+
+[DeepSpeech2](https://github.com/PaddlePaddle/DeepSpeech)
+
+[NVIDIA Neural Modules: NeMo](https://github.com/NVIDIA/NeMo)
+
+[RAdam](https://github.com/LiyuanLucasLiu/RAdam)
+
+[LR-Finder](https://github.com/davidtvs/pytorch-lr-finder)
+
+[Cyclical Learning Rate Scheduler With Decay in Pytorch](https://github.com/bluesky314/Cyclical_LR_Scheduler_With_Decay_Pytorch)
+
+[MixNet](https://github.com/romulus0914/MixNet-Pytorch)

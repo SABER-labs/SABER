@@ -50,3 +50,5 @@ ipython_config.py
 
 # repositry specific
 1cycle_policy_images
+dataset_scripts/*.model
+dataset_scripts/*.vocab
