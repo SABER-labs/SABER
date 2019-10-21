@@ -9,7 +9,7 @@ libri_test_other_data_sets = ['test-other']
 libri_dev_data_sets = ['dev-clean', 'dev-other']
 sentencepiece_model = 'dataset_scripts/sp_librispeech_128.model'
 lmdb_root_path = 'lmdb-databases-librispeech_128'
-log_path = "checkpoints_logs/exp-sp-nonfocal-vocab128"
+log_path = "checkpoints_logs/exp-sp-nonfocal-vocab128-resume"
 
 # Mel feature configs
 sampling_rate = 16000
@@ -37,13 +37,13 @@ workers = 30
 train_batch_size = 16 * len(gpu_id.split(","))
 epochs = 400
 lr = 1e-3
-lr_decay_step = [int(epochs * 0.25), int(epochs * 0.75)]
+lr_decay_step = [int(epochs * 0.15), int(epochs * 0.75)]
 cyclic_lr_milestones = [10, 25, 60, 80, 120, 180, 240, 320, 400, 480]
 cyclic_lr_decay = [60, 120, 240, 480, 960]
 cyclic_lr_min = 1e-4
 lr_gamma = 0.1
 checkpoint_root = 'checkpoints'
-checkpoint_version = 'saber_w0.672_c0.360_e40.pth'
+checkpoint_version = ''
 best_model_version = 'best_saber.pth'
 
 # UDA hyper-params
