@@ -135,6 +135,9 @@ def main():
                  log_handler=WeightsHistHandler(model),
                  event_name=Events.EPOCH_COMPLETED)
     tb_logger.attach(trainer,
+                 log_handler=WeightsScalarHandler(model),
+                 event_name=Events.ITERATION_COMPLETED)
+    tb_logger.attach(trainer,
                  log_handler=GradsScalarHandler(model),
                  event_name=Events.ITERATION_COMPLETED)
     tb_logger.attach(trainer,
