@@ -44,12 +44,13 @@ def main():
     device = params.get('device')
     model = ASRModel(input_features=config.num_mel_banks ,num_classes=config.vocab_size).to(device)
     model = torch.nn.DataParallel(model)
-    optimizer = RAdam(model.parameters(), lr=config.lr, eps=1e-8)
+    optimizer = RAdam(model.parameters(), lr=config.lr, eps=1e-7)
     load_checkpoint(model, optimizer, params)
     start_epoch = params['start_epoch']
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=config.lr_decay_step, gamma=config.lr_gamma, last_epoch=start_epoch)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=config.lr_gamma, patience=int(config.epochs * 0.05), verbose=True, threshold_mode="abs", cooldown=int(config.epochs * 0.05), min_lr=1e-5)
+    # scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=config.lr_decay_step, gamma=config.lr_gamma, last_epoch=start_epoch)
     # scheduler = CyclicCosAnnealingLR(optimizer, milestones=config.cyclic_lr_milestones, decay_milestones=config.cyclic_lr_decay, eta_min= config.cyclic_lr_min, last_epoch=start_epoch)
-    sup_criterion = ACELoss()
+    sup_criterion = FocalACELoss()
     unsup_criterion = UDALoss()
     tb_logger = TensorboardLogger(log_dir=log_path)
     pbar = ProgressBar(persist=True, desc="Training")
@@ -176,10 +177,10 @@ def main():
 
     @evaluator_other.on(Events.EPOCH_COMPLETED)
     def save_checkpoints(engine):
-        scheduler.step()
         metrics = engine.state.metrics
         wer = metrics['wer']
         cer = metrics['cer']
+        scheduler.step(wer)
         epoch = trainer.state.epoch
         save_checkpoint(model, optimizer, best_meter, wer, cer, epoch)
         best_meter.update(wer, cer, epoch)

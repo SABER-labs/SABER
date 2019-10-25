@@ -120,12 +120,13 @@ class MDConv(nn.Module):
 
 
 class MixNetBlock(nn.Module):
-	def __init__(self, in_channels, out_channels, kernel_size, stride, expand_ratio, non_linear='ReLU', se_ratio=0.0):
+	def __init__(self, in_channels, out_channels, kernel_size, stride, expand_ratio, non_linear='ReLU', se_ratio=0.0, drop_connect_rate=0.2):
 		super(MixNetBlock, self).__init__()
 
 		expand = (expand_ratio != 1)
 		expand_channels = in_channels * expand_ratio
 		se = (se_ratio != 0.0)
+		self.drop_connect_rate = drop_connect_rate
 		self.residual_connection = (
 			stride == 1 and in_channels == out_channels)
 
@@ -163,9 +164,19 @@ class MixNetBlock(nn.Module):
 
 		self.conv = nn.Sequential(*conv)
 
+	def _drop_connect(self, x):
+		if not self.training:
+			return x
+		keep_prob = 1.0 - self.drop_connect_rate
+		batch_size = x.size(0)
+		random_tensor = keep_prob
+		random_tensor += torch.rand(batch_size, 1, 1, device=x.device)
+		binary_tensor = random_tensor.floor()
+		return x.div(keep_prob) * binary_tensor
+
 	def forward(self, x):
 		if self.residual_connection:
-			return x + self.conv(x)
+			return x + self._drop_connect(self.conv(x))
 		else:
 			return self.conv(x)
 
@@ -199,13 +210,13 @@ class ASRModel(nn.Module):
 							 stride, growth, non_linearity, squeeze_factor, repeats))
 		in_filter = start * (i + 1)
 
-	def __init__(self, input_features=80, num_classes=128, depth_multiplier=1.2):
+	def __init__(self, input_features=80, num_classes=128, depth_multiplier=1.25):
 		super(ASRModel, self).__init__()
 		config = self.mixnet_speech
 		stem_channels = 128
-		dropout_rate = 0.1
+		dropout_rate = 0.25
 
-		self._stage_out_channels = int(1024)
+		self._stage_out_channels = _RoundChannels(1024 * depth_multiplier)
 
 		# depth multiplier
 		stem_channels = _RoundChannels(stem_channels*depth_multiplier)
@@ -232,7 +243,7 @@ class ASRModel(nn.Module):
 			config[-1][1], self._stage_out_channels, kernel_width=87, non_linear='Swish', dilation=2)
 		self.head_conv2 = Conv1x1Bn(
 			self._stage_out_channels, self._stage_out_channels, non_linear='Swish')
-		# self.dropout = nn.Dropout(dropout_rate)
+		self.dropout = nn.Dropout(dropout_rate)
 
 		self.classifier = nn.Conv1d(
 			self._stage_out_channels, num_classes, 1, 1, bias=True)
@@ -243,7 +254,7 @@ class ASRModel(nn.Module):
 		x = self.layers(x)
 		x = self.head_conv1(x)
 		x = self.head_conv2(x)
-		# x = self.dropout(x)
+		x = self.dropout(x)
 		x = self.classifier(x)
 		return x
 
@@ -269,7 +280,7 @@ if __name__ == '__main__':
 	device = 'cuda' if torch.cuda.is_available() else 'cpu'
 	net = ASRModel(input_features=config.num_mel_banks ,num_classes=config.vocab_size).to(device)
 	with torch.no_grad():
-		# summary(net, (config.num_mel_banks, 1000), batch_size=1, device=device)
+		summary(net, (config.num_mel_banks, 500), batch_size=1, device=device)
 		image = torch.randn(1, config.num_mel_banks, 500).to(device)
 		start = time()
 		y = net(image)
