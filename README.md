@@ -1,6 +1,7 @@
 ![alt text](icons/character+fat+game+hero+inkcontober+movie+icon-1320183878106104615_24.png) SABER - Semi-Supervised Audio Baseline for Easy Reproduction
 =====
 A PyTorch project currently under research can provide easily reproducible baselines for automatic speech recognition using semi-supervised learning.
+Contributions are welcome.
 
 ## Overview
 SABER consists of the following components
