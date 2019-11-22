@@ -9,7 +9,7 @@ libri_test_other_data_sets = ['test-other']
 libri_dev_data_sets = ['dev-clean', 'dev-other']
 sentencepiece_model = 'dataset_scripts/sp_librispeech_128.model'
 lmdb_root_path = 'lmdb-databases-librispeech_128'
-log_path = "checkpoints_logs/exp-sp-nonfocal-vocab128"
+log_path = "checkpoints_logs/exp-sp-nonfocal-vocab128-new"
 
 # Mel feature configs
 sampling_rate = 16000
@@ -28,27 +28,28 @@ ref_db = 20
 max_db = 100
 
 # Model training configs
-num_cores = 12
+num_cores = 24
 vocab_size = 128
 
 # Training configs
 gpu_id = '0,1,2'
 workers = 30
-train_batch_size = 24 * len(gpu_id.split(","))
-epochs = 400
-lr = 1e-3
+train_batch_size = 16 * len(gpu_id.split(","))
+epochs = 600
+lr = 3e-3
 lr_decay_step = [int(epochs * 0.15), int(epochs * 0.75)]
 cyclic_lr_milestones = [10, 25, 60, 80, 120, 180, 240, 320, 400, 480]
 cyclic_lr_decay = [60, 120, 240, 480, 960]
-cyclic_lr_min = 1e-4
+cyclic_lr_min = 1e-5
 lr_gamma = 0.1
 checkpoint_root = 'checkpoints'
 checkpoint_version = ''
 best_model_version = 'best_saber.pth'
 
 # UDA hyper-params
-augment_warmup_epoch = int(epochs * 0.7)
-unsupervision_warmup_epoch = int(epochs * 0.2)
+augment_warmup_epoch = int(epochs * 0.4)
+unsupervision_warmup_epoch = int(epochs * 0.3)
+temperature_softmax = 0.4
 
 # Cutout hyper-params
 max_sprinkles_percent = 0.125

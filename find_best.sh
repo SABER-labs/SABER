@@ -1,0 +1,1 @@
+ls checkpoints | egrep c$(ls checkpoints | egrep -o "_[c0-9\.]+_" | sed -e 's/_//g' -e 's/c//g' | sort | head -n 1)
