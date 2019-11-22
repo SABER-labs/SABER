@@ -23,11 +23,20 @@ class HardSwish(nn.Module):
     def forward(self, x):
         return x * self.hsigmoid(x)
 
+class Mish(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        #inlining this saves 1 second per epoch (V100 GPU) vs having a temp x and then returning x(!)
+        return x *( torch.tanh(F.softplus(x)))
+
 
 NON_LINEARITY = {
     'ReLU': nn.ReLU6(inplace=True),
     'Swish': HardSwish(),
-    'Sigmoid': HardSigmoid()
+    'Sigmoid': HardSigmoid(),
+    'Mish': Mish()
 }
 
 
@@ -40,7 +49,7 @@ def _RoundChannels(c, divisor=8, min_value=None):
     return new_c
 
 
-def Conv3x3Bn(in_channels, out_channels, stride, non_linear='ReLU', kernel_size=3):
+def Conv3x3Bn(in_channels, out_channels, stride, non_linear='Mish', kernel_size=3):
     return nn.Sequential(
         create_conv1d_pad(in_channels, out_channels, kernel_size,
                           stride=stride, padding='same', bias=False),
@@ -49,7 +58,7 @@ def Conv3x3Bn(in_channels, out_channels, stride, non_linear='ReLU', kernel_size=
     )
 
 
-def Conv1x1Bn(in_channels, out_channels, non_linear='ReLU', kernel_width=1, dilation=1, stride=1, bias=False):
+def Conv1x1Bn(in_channels, out_channels, non_linear='Mish', kernel_width=1, dilation=1, stride=1, bias=False):
     return nn.Sequential(
         create_conv1d_pad(in_channels, out_channels, kernel_width, stride=stride,
                           padding='same', dilation=dilation, bias=bias),
@@ -69,7 +78,7 @@ class SqueezeAndExcite(nn.Module):
         squeeze_channels = int(squeeze_channels)
         self.se_reduce = nn.Conv1d(
             channels, squeeze_channels, 1, 1, 0, bias=True)
-        self.non_linear1 = NON_LINEARITY['Swish']
+        self.non_linear1 = NON_LINEARITY['Mish']
         self.se_expand = nn.Conv1d(
             squeeze_channels, channels, 1, 1, 0, bias=True)
         self.non_linear2 = NON_LINEARITY['Sigmoid']
@@ -84,7 +93,7 @@ class SqueezeAndExcite(nn.Module):
 
 
 class MixNetBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride, expand_ratio, non_linear='ReLU', se_ratio=0.0, drop_connect_rate=0.00):
+    def __init__(self, in_channels, out_channels, kernel_size, stride, expand_ratio, non_linear='Mish', se_ratio=0.0, drop_connect_rate=0.00):
         super(MixNetBlock, self).__init__()
 
         expand = (expand_ratio != 1)
@@ -167,7 +176,7 @@ class ASRModel(nn.Module):
     in_filter = 256
     for i, filter_i in enumerate(filters):
         stride = 2 if i < 2 else 1
-        non_linearity = 'ReLU' if i == 0 else 'Swish'
+        non_linearity = 'Mish'
         growth = 1 if i == 0 else 4
         squeeze_factor = 0.0 if i == 0 else 0.5
         out_channel = in_filter + add_channels #* (i+1)
@@ -205,9 +214,9 @@ class ASRModel(nn.Module):
 
         # last several layers
         self.head_conv1 = Conv1x1Bn(
-            config[-1][1], self._stage_out_channels, kernel_width=87, non_linear='Swish', dilation=2)
+            config[-1][1], self._stage_out_channels, kernel_width=87, non_linear='Mish', dilation=2)
         self.head_conv2 = Conv1x1Bn(
-            self._stage_out_channels, self._stage_out_channels, non_linear='Swish')
+            self._stage_out_channels, self._stage_out_channels, non_linear='Mish')
         self.dropout = nn.Dropout(dropout_rate)
         self.classifier = nn.Conv1d(self._stage_out_channels, num_classes, 1, 1, 0, bias=True)
         self._initialize_weights()

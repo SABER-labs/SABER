@@ -1,12 +1,13 @@
 ![alt text](icons/character+fat+game+hero+inkcontober+movie+icon-1320183878106104615_24.png) SABER - Semi-Supervised Audio Baseline for Easy Reproduction
 =====
-A PyTorch implementation for the paper #TODO which provides easily reproducible baselines for automatic speech recognition using semi-supervised learning.
+A PyTorch project currently under research can provide easily reproducible baselines for automatic speech recognition using semi-supervised learning.
 
 ## Overview
 SABER consists of the following components
 
 * An Mixnet based variant of QuartzNet by NVIDIA
-* RAdam optimizer to offset warmup used by SpecAugment
+* Ranger (RAdam + Lookahead) optimizer to offset warmup used by SpecAugment (by Leslie Smith)
+* Mish activation function
 * Data Augmentions used are SpecNoise, SpecAugment, SpecSparkle a cutout inspired variant, SpecBlur (a novel approach). Augmentation parameters linearly increase in a curriculum based approach.
 * Aggregated Cross Entropy loss instead of CTC loss for easier training
 * Unsupervised Data Augmentation as means for Semi-Supervised Learning
