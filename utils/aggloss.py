@@ -7,9 +7,8 @@ from .config import temperature_softmax
 
 class ACELoss(nn.Module):
 
-    def forward(self, probs, targets, input_lengths, target_lengths):
-        bs, class_size, T_ = probs.size()
-        probs = torch.softmax(probs, dim=1)
+    def forward(self, logits, targets, input_lengths, target_lengths):
+        bs, class_size, T_ = logits.size()
         tagets_split = list(torch.split(targets, target_lengths.tolist()))
         targets_padded = torch.nn.utils.rnn.pad_sequence(
             tagets_split, batch_first=True, padding_value=0)
@@ -18,10 +17,12 @@ class ACELoss(nn.Module):
         # sum across seq, to get batch * class
         targets_padded = torch.sum(targets_padded, 1).float().cuda()
         targets_padded[:, 0] = T_ - target_lengths
+        probs = torch.softmax(logits, dim=1)
         probs = torch.sum(probs, 2)  # sum across seq, to get batch * class
         probs = probs/T_
         targets_padded = targets_padded/T_
         return (-torch.sum(torch.log(probs)*targets_padded)) / bs
+        # return F.kl_div(torch.log(probs), targets_padded, reduction="batchmean")
 
     def update_epoch(self, epoch):
         self.epoch = epoch
@@ -56,8 +57,8 @@ class UDALoss(nn.Module):
 class CustomCTCLoss(nn.Module):
 
     def forward(self, probs, targets, input_lengths, target_lengths):
-        probs = probs.permute(2, 0, 1)
-        log_probs = torch.log_softmax(probs, dim=2)
+        log_probs = torch.log_softmax(probs, dim=1)
+        log_probs = log_probs.permute(2, 0, 1)
         return F.ctc_loss(log_probs, targets, input_lengths, target_lengths, zero_infinity=True)
 
 

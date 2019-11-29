@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 import math
-from .conv1dlayers import MDConv1d, create_conv1d_pad
+from .conv1dlayers import MDConv1d, create_conv1d_pad, PositionalEncoding
 
 
 class HardSigmoid(nn.Module):
@@ -23,13 +23,14 @@ class HardSwish(nn.Module):
     def forward(self, x):
         return x * self.hsigmoid(x)
 
+
 class Mish(nn.Module):
     def __init__(self):
         super().__init__()
 
     def forward(self, x):
-        #inlining this saves 1 second per epoch (V100 GPU) vs having a temp x and then returning x(!)
-        return x *( torch.tanh(F.softplus(x)))
+        # inlining this saves 1 second per epoch (V100 GPU) vs having a temp x and then returning x(!)
+        return x * (torch.tanh(F.softplus(x)))
 
 
 NON_LINEARITY = {
@@ -49,18 +50,9 @@ def _RoundChannels(c, divisor=8, min_value=None):
     return new_c
 
 
-def Conv3x3Bn(in_channels, out_channels, stride, non_linear='Mish', kernel_size=3):
+def Conv1x1Bn(in_channels, out_channels, non_linear='ReLU', kernel_size=1, dilation=1, stride=1, bias=False):
     return nn.Sequential(
-        create_conv1d_pad(in_channels, out_channels, kernel_size,
-                          stride=stride, padding='same', bias=False),
-        nn.BatchNorm1d(out_channels),
-        NON_LINEARITY[non_linear]
-    )
-
-
-def Conv1x1Bn(in_channels, out_channels, non_linear='Mish', kernel_width=1, dilation=1, stride=1, bias=False):
-    return nn.Sequential(
-        create_conv1d_pad(in_channels, out_channels, kernel_width, stride=stride,
+        create_conv1d_pad(in_channels, out_channels, kernel_size, stride=stride,
                           padding='same', dilation=dilation, bias=bias),
         nn.BatchNorm1d(out_channels),
         NON_LINEARITY[non_linear]
@@ -78,7 +70,7 @@ class SqueezeAndExcite(nn.Module):
         squeeze_channels = int(squeeze_channels)
         self.se_reduce = nn.Conv1d(
             channels, squeeze_channels, 1, 1, 0, bias=True)
-        self.non_linear1 = NON_LINEARITY['Mish']
+        self.non_linear1 = NON_LINEARITY['Swish']
         self.se_expand = nn.Conv1d(
             squeeze_channels, channels, 1, 1, 0, bias=True)
         self.non_linear2 = NON_LINEARITY['Sigmoid']
@@ -93,7 +85,7 @@ class SqueezeAndExcite(nn.Module):
 
 
 class MixNetBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride, expand_ratio, non_linear='Mish', se_ratio=0.0, drop_connect_rate=0.00):
+    def __init__(self, in_channels, out_channels, kernel_size, stride, expand_ratio, non_linear='ReLU', se_ratio=0.0, drop_connect_rate=0.00):
         super(MixNetBlock, self).__init__()
 
         expand = (expand_ratio != 1)
@@ -169,26 +161,26 @@ def form_stage(in_channel, out_channel, start_kernel, stride, growth, non_linear
 
 class ASRModel(nn.Module):
     # [in_channels, out_channels, kernel_size, stride, expand_ratio, non_linear, se_ratio]
-    filters = [29, 35, 47, 59, 71]
+    filters = [9, 11, 15, 19, 23]
     repeats = 2
     mixnet_speech = []
     add_channels = 128
     in_filter = 256
     for i, filter_i in enumerate(filters):
         stride = 2 if i < 2 else 1
-        non_linearity = 'Mish'
-        growth = 1 if i == 0 else 4
-        squeeze_factor = 0.0 if i == 0 else 0.5
-        out_channel = in_filter + add_channels #* (i+1)
+        non_linearity = 'ReLU' if i < 1 else 'Swish'
+        growth = 1 if i < 1 else 4
+        squeeze_factor = 0.0 if i < 1 else 0.25
+        out_channel = in_filter + add_channels  # * (i+1)
         mixnet_speech.extend(form_stage(in_filter, out_channel, filter_i,
                                         stride, growth, non_linearity, squeeze_factor, repeats))
         in_filter = out_channel
 
-    def __init__(self, input_features=80, num_classes=128, depth_multiplier=1.2):
+    def __init__(self, input_features=80, num_classes=128, depth_multiplier=1.0):
         super(ASRModel, self).__init__()
         config = self.mixnet_speech
         stem_channels = 256
-        dropout_rate = 0.2
+        dropout_rate = 0.3
 
         self._stage_out_channels = _RoundChannels(1024 * depth_multiplier)
 
@@ -202,23 +194,26 @@ class ASRModel(nn.Module):
             config[i] = tuple(conf_ls)
 
         # stem convolution
-        self.stem_conv = Conv3x3Bn(
-            input_features, stem_channels, 2, kernel_size=27)
+        self.stem_conv = Conv1x1Bn(
+            input_features, stem_channels, kernel_size=9, stride=2)
 
         # building MixNet blocks
         layers = []
         for in_channels, out_channels, kernel_size, stride, expand_ratio, non_linear, se_ratio in config:
-            layers.append(MixNetBlock(in_channels, out_channels,
-                                      kernel_size, stride, expand_ratio, non_linear, se_ratio))
+            layers.append(MixNetBlock(in_channels, out_channels, kernel_size, stride, expand_ratio, non_linear, se_ratio))
+            
         self.layers = nn.Sequential(*layers)
 
         # last several layers
         self.head_conv1 = Conv1x1Bn(
-            config[-1][1], self._stage_out_channels, kernel_width=87, non_linear='Mish', dilation=2)
+            config[-1][1], self._stage_out_channels, kernel_size=29, non_linear='Swish', dilation=2)
         self.head_conv2 = Conv1x1Bn(
-            self._stage_out_channels, self._stage_out_channels, non_linear='Mish')
+            self._stage_out_channels, self._stage_out_channels, non_linear='Swish')
         self.dropout = nn.Dropout(dropout_rate)
-        self.classifier = nn.Conv1d(self._stage_out_channels, num_classes, 1, 1, 0, bias=True)
+        self.classifier = nn.Linear(self._stage_out_channels, num_classes)
+        decoder_layers = nn.TransformerEncoderLayer(self._stage_out_channels, 8, dim_feedforward=max(1024, int(1.5 * self._stage_out_channels)), dropout=0.1, activation='relu')
+        self.decoder = nn.TransformerEncoder(decoder_layers, num_layers=3)
+        self.pos_encoding = PositionalEncoding(self._stage_out_channels, max_len=1000, dropout=0.1)
         self._initialize_weights()
 
     def forward(self, x):
@@ -226,8 +221,17 @@ class ASRModel(nn.Module):
         x = self.layers(x)
         x = self.head_conv1(x)
         x = self.head_conv2(x)
+
+        
+        x = x.permute(2, 0, 1)
+        x = self.pos_encoding(x)
+        x = self.decoder(x)
+        x = x.permute(1, 2, 0)
+
         x = self.dropout(x)
+        x = x.permute(0, 2, 1)
         x = self.classifier(x)
+        x = x.permute(0, 2, 1)
         return x
 
     def _initialize_weights(self, n=''):

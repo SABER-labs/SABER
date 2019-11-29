@@ -1,7 +1,11 @@
+from utils.model_utils import get_most_probable
+from datasets.librispeech import get_sentence
+
 from utils import config
 import os
 import torch
 from models.mixnet import ASRModel
+# from models.wav2letter import ASRModel
 from utils.logger import logger
 from functools import partial
 from datasets.librispeech import allign_collate, align_collate_unlabelled, allign_collate_val
@@ -23,7 +27,7 @@ from utils.training_utils import load_checkpoint
 import numpy as np
 import toml
 
-torch.backends.cudnn.enabled = True
+torch.backends.cudnn.enabled = False
 torch.backends.cudnn.benchmark = True
 torch.backends.cudnn.deterministic = False
 
@@ -52,7 +56,7 @@ def main():
     optimizer = Ranger(model.parameters(), lr=config.lr, eps=1e-5)
     load_checkpoint(model, optimizer, params)
     start_epoch = params['start_epoch']
-    sup_criterion = ACELoss()
+    sup_criterion = CustomCTCLoss()
     unsup_criterion = UDALoss()
     tb_logger = TensorboardLogger(log_dir=log_path)
     pbar = ProgressBar(persist=True, desc="Training")
@@ -95,8 +99,8 @@ def main():
         #     probs_unsup = model(imgs_unsup.to(device))
         # probs_aug_unsup = model(augmented_imgs_unsup.to(device))
 
-        sup_loss = sup_criterion(probs_sup, labels_sup, torch.tensor(
-            [probs_sup.size(1)]*probs_sup.size(0), dtype=torch.long), label_lengths)
+        sup_loss = sup_criterion(probs_sup, labels_sup.to(torch.int32), torch.tensor(
+            [probs_sup.size(2)]*probs_sup.size(0), dtype=torch.int32), label_lengths.to(torch.int32))
         # unsup_loss = unsup_criterion(probs_unsup, probs_aug_unsup)
 
         # Blend supervised and unsupervised losses till unsupervision_warmup_epoch
@@ -113,6 +117,15 @@ def main():
     def validate_update_function(engine, batch):
         img, labels, label_lengths = batch
         y_pred = model(img.to(device))
+        if np.random.rand() > 0.99:
+            pred_sentences = get_most_probable(y_pred)
+            labels_list = labels.tolist()
+            idx = 0
+            for i, length in enumerate(label_lengths.cpu().tolist()):
+                pred_sentence = pred_sentences[i]
+                gt_sentence = get_sentence(labels_list[idx:idx+length])
+                idx += length
+                print(f"Pred sentence: {pred_sentence}, GT: {gt_sentence}")
         return (y_pred, labels, label_lengths)
 
     allign_collate_partial = partial(allign_collate, device=device)
@@ -137,7 +150,7 @@ def main():
         metric.attach(evaluator_other, name)
 
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=config.lr_gamma, patience=int(
-        config.epochs * 0.05), verbose=True, threshold_mode="abs", cooldown=int(config.epochs * 0.025), min_lr=1e-5)
+        config.epochs * 0.01), verbose=True, threshold_mode="abs", cooldown=int(config.epochs * 0.01), min_lr=1e-5)
     # scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=config.lr_decay_step, gamma=config.lr_gamma, last_epoch=start_epoch)
     # scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, 1e-2, total_steps=config.epochs * len(train_loader_labbeled_loader),
     #                        div_factor=25, final_div_factor=1e3, pct_start=0.05, last_epoch=-1)
