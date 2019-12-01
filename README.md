@@ -19,11 +19,19 @@ SABER consists of the following components
 * python3.x
 * libraries in requirements.txt
 
-## Download Dataset
+## Download & Seutp
 
 Librispeech dataset using download scripts, change dir parameter as per your configuration
 ```
 sh download_scripts/download_librispeech.sh
+sh download_scripts/extract_librispeech_tars.sh
+```
+
+Setup sentencepeiece vocab & form LMDB dataset.
+```
+sh dataset_scripts/librispeech_all_lines.sh
+sh dataset_scripts/librispeech_sentencepiece_model.sh
+sh dataset_scripts/create_librispeech_lmdb.py
 ```
 
 ## Training
