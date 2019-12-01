@@ -50,7 +50,7 @@ def _RoundChannels(c, divisor=8, min_value=None):
     return new_c
 
 
-def Conv1x1Bn(in_channels, out_channels, non_linear='ReLU', kernel_size=1, dilation=1, stride=1, bias=False):
+def Conv1x1Bn(in_channels, out_channels, non_linear='Mish', kernel_size=1, dilation=1, stride=1, bias=False):
     return nn.Sequential(
         create_conv1d_pad(in_channels, out_channels, kernel_size, stride=stride,
                           padding='same', dilation=dilation, bias=bias),
@@ -70,7 +70,7 @@ class SqueezeAndExcite(nn.Module):
         squeeze_channels = int(squeeze_channels)
         self.se_reduce = nn.Conv1d(
             channels, squeeze_channels, 1, 1, 0, bias=True)
-        self.non_linear1 = NON_LINEARITY['Swish']
+        self.non_linear1 = NON_LINEARITY['Mish']
         self.se_expand = nn.Conv1d(
             squeeze_channels, channels, 1, 1, 0, bias=True)
         self.non_linear2 = NON_LINEARITY['Sigmoid']
@@ -85,7 +85,7 @@ class SqueezeAndExcite(nn.Module):
 
 
 class MixNetBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride, expand_ratio, non_linear='ReLU', se_ratio=0.0, drop_connect_rate=0.00):
+    def __init__(self, in_channels, out_channels, kernel_size, stride, expand_ratio, non_linear='Mish', se_ratio=0.0, drop_connect_rate=0.00):
         super(MixNetBlock, self).__init__()
 
         expand = (expand_ratio != 1)
@@ -162,13 +162,13 @@ def form_stage(in_channel, out_channel, start_kernel, stride, growth, non_linear
 class ASRModel(nn.Module):
     # [in_channels, out_channels, kernel_size, stride, expand_ratio, non_linear, se_ratio]
     filters = [9, 11, 15, 19, 23]
-    repeats = 2
+    repeats = 3
     mixnet_speech = []
     add_channels = 128
     in_filter = 256
     for i, filter_i in enumerate(filters):
         stride = 2 if i < 2 else 1
-        non_linearity = 'ReLU' if i < 1 else 'Swish'
+        non_linearity = 'Mish' if i < 1 else 'Mish'
         growth = 1 if i < 1 else 4
         squeeze_factor = 0.0 if i < 1 else 0.25
         out_channel = in_filter + add_channels  # * (i+1)
@@ -206,12 +206,12 @@ class ASRModel(nn.Module):
 
         # last several layers
         self.head_conv1 = Conv1x1Bn(
-            config[-1][1], self._stage_out_channels, kernel_size=29, non_linear='Swish', dilation=2)
+            config[-1][1], self._stage_out_channels, kernel_size=29, non_linear='Mish', dilation=2)
         self.head_conv2 = Conv1x1Bn(
-            self._stage_out_channels, self._stage_out_channels, non_linear='Swish')
+            self._stage_out_channels, self._stage_out_channels, non_linear='Mish')
         self.dropout = nn.Dropout(dropout_rate)
         self.classifier = nn.Linear(self._stage_out_channels, num_classes)
-        decoder_layers = nn.TransformerEncoderLayer(self._stage_out_channels, 8, dim_feedforward=max(1024, int(1.5 * self._stage_out_channels)), dropout=0.1, activation='relu')
+        decoder_layers = nn.TransformerEncoderLayer(self._stage_out_channels, 8, dim_feedforward=max(1024, int(1.5 * self._stage_out_channels)), dropout=0.1, activation='gelu')
         self.decoder = nn.TransformerEncoder(decoder_layers, num_layers=3)
         self.pos_encoding = PositionalEncoding(self._stage_out_channels, max_len=1000, dropout=0.1)
         self._initialize_weights()
