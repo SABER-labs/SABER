@@ -90,7 +90,7 @@ class SpecAugmentOnMel(object):
 
     def __call__(self, data):
         tensor = data['mel_spectrogram'].astype(np.float32)
-        percentage = np.clip(data['epoch'] / augment_warmup_epoch, 0.01, 1)
+        percentage = np.clip(data['epoch'] / augment_warmup_epoch, 0.15, 1)
         max_time_warp = max(1, int(percentage * config_time_warp))
         max_freq_width = max(1, int(percentage * config_freq_width))
         max_time_width = max(1, int(percentage * config_time_width))
@@ -104,7 +104,7 @@ class SpecSprinkleOnMel(object):
 
     def __call__(self, data):
         tensor = data['mel_spectrogram'].astype(np.float32)
-        warmup_percen = np.clip(data['epoch'] / augment_warmup_epoch, 0.01, 1)
+        warmup_percen = np.clip(data['epoch'] / augment_warmup_epoch, 0.15, 1)
         percentage = warmup_percen * max_sprinkles_percent
         max_sprinkles_cuts = max(2, int(warmup_percen * max_sprinkles))
         num_cuts = np.random.randint(1, max_sprinkles_cuts)

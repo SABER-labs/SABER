@@ -5,13 +5,12 @@ from utils import config
 import os
 import torch
 from models.mixnet import ASRModel
-# from models.wav2letter import ASRModel
 from utils.logger import logger
 from functools import partial
 from datasets.librispeech import allign_collate, align_collate_unlabelled, allign_collate_val
-from utils.lmdb import lmdbDataset, lmdbDoubleDataset
+from utils.lmdb import lmdbDataset, lmdbMultiDataset
 from utils.training_utils import save_checkpoint, BestMeter
-from utils.config import lmdb_root_path, workers, train_batch_size, unsupervision_warmup_epoch, log_path, epochs
+from utils.config import lmdb_root_path, workers, train_batch_size, unsupervision_warmup_epoch, log_path, epochs, lmdb_commonvoice_root_path, lmdb_airtel_root_path
 import ignite
 from ignite.engine import Events, Engine
 from ignite.metrics import Loss, RunningAverage
@@ -62,26 +61,30 @@ def main():
     pbar = ProgressBar(persist=True, desc="Training")
     pbar_valid = ProgressBar(persist=True, desc="Validation Clean")
     pbar_valid_other = ProgressBar(persist=True, desc="Validation Other")
+    pbar_valid_airtel = ProgressBar(persist=True, desc="Validation Airtel")
     timer = Timer(average=True)
     best_meter = params.get('best_stats', BestMeter())
 
     trainCleanPath = os.path.join(lmdb_root_path, 'train-labelled')
     trainOtherPath = os.path.join(lmdb_root_path, 'train-unlabelled')
+    trainCommonVoicePath = os.path.join(
+        lmdb_commonvoice_root_path, 'train-labelled-en')
+    trainAirtelPath = os.path.join(lmdb_airtel_root_path, 'train-labelled-en')
     testCleanPath = os.path.join(lmdb_root_path, 'test-clean')
     testOtherPath = os.path.join(lmdb_root_path, 'test-other')
+    testAirtelPath = os.path.join(lmdb_airtel_root_path, 'test-labelled-en')
     devOtherPath = os.path.join(lmdb_root_path, 'dev-other')
 
-    # train_clean = lmdbDataset(root=trainCleanPath)
-    # train_other = lmdbDoubleDataset(root1=trainOtherPath, root2=devOtherPath)
-
-    train_clean = lmdbDoubleDataset(root1=trainCleanPath, root2=trainOtherPath)
+    train_clean = lmdbMultiDataset(
+        roots=[trainCleanPath, trainOtherPath, trainCommonVoicePath, trainAirtelPath])
     train_other = lmdbDataset(root=devOtherPath)
 
     test_clean = lmdbDataset(root=testCleanPath)
     test_other = lmdbDataset(root=testOtherPath)
+    test_airtel = lmdbDataset(root=testAirtelPath)
 
     logger.info(
-        f'Loaded Train & Test Datasets, train_labbeled={len(train_clean)}, train_unlabbeled={len(train_other)}, test_clean={len(test_clean)} & test_other={len(test_other)} examples')
+        f'Loaded Train & Test Datasets, train_labbeled={len(train_clean)}, train_unlabbeled={len(train_other)}, test_clean={len(test_clean)}, test_other={len(test_other)}, test_airtel={len(test_airtel)} examples')
 
     def train_update_function(engine, _):
         optimizer.zero_grad()
@@ -134,23 +137,27 @@ def main():
     allign_collate_val_partial = partial(allign_collate_val, device=device)
 
     train_loader_labbeled_loader = torch.utils.data.DataLoader(
-        train_clean, batch_size=train_batch_size, shuffle=True, num_workers=config.workers, pin_memory=False, collate_fn=allign_collate_partial)
+        train_clean, batch_size=train_batch_size, shuffle=True, num_workers=config.workers, pin_memory=True, collate_fn=allign_collate_partial)
     train_loader_unlabbeled_loader = torch.utils.data.DataLoader(
-        train_other, batch_size=train_batch_size * 4, shuffle=True, num_workers=config.workers, pin_memory=False, collate_fn=align_collate_unlabelled_partial)
+        train_other, batch_size=train_batch_size * 4, shuffle=True, num_workers=config.workers, pin_memory=True, collate_fn=align_collate_unlabelled_partial)
     test_loader_clean = torch.utils.data.DataLoader(
         test_clean, batch_size=train_batch_size, shuffle=False, num_workers=config.workers, pin_memory=False, collate_fn=allign_collate_val_partial)
     test_loader_other = torch.utils.data.DataLoader(
         test_other, batch_size=train_batch_size, shuffle=False, num_workers=config.workers, pin_memory=False, collate_fn=allign_collate_val_partial)
+    test_loader_airtel = torch.utils.data.DataLoader(
+        test_airtel, batch_size=train_batch_size, shuffle=False, num_workers=config.workers, pin_memory=False, collate_fn=allign_collate_val_partial)
     trainer = Engine(train_update_function)
     evaluator_clean = Engine(validate_update_function)
     evaluator_other = Engine(validate_update_function)
+    evaluator_airtel = Engine(validate_update_function)
     metrics = {'wer': WordErrorRate(), 'cer': CharacterErrorRate()}
     for name, metric in metrics.items():
         metric.attach(evaluator_clean, name)
         metric.attach(evaluator_other, name)
+        metric.attach(evaluator_airtel, name)
 
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=config.lr_gamma, patience=int(
-        config.epochs * 0.01), verbose=True, threshold_mode="abs", cooldown=int(config.epochs * 0.01), min_lr=1e-5)
+        config.epochs * 0.05), verbose=True, threshold_mode="abs", cooldown=int(config.epochs * 0.025), min_lr=1e-5)
     # scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=config.lr_decay_step, gamma=config.lr_gamma, last_epoch=start_epoch)
     # scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, 1e-2, total_steps=config.epochs * len(train_loader_labbeled_loader),
     #                        div_factor=25, final_div_factor=1e3, pct_start=0.05, last_epoch=-1)
@@ -182,10 +189,16 @@ def main():
                      log_handler=OutputHandler(tag="validation_other", metric_names=[
                                                "wer", "cer"], another_engine=trainer),
                      event_name=Events.EPOCH_COMPLETED)
+    tb_logger.attach(evaluator_airtel,
+                     log_handler=OutputHandler(tag="validation_airtel", metric_names=[
+                                               "wer", "cer"], another_engine=trainer),
+                     event_name=Events.EPOCH_COMPLETED)
     pbar.attach(trainer, output_transform=lambda x: {'loss': x})
     pbar_valid.attach(evaluator_clean, [
                       'wer', 'cer'], event_name=Events.EPOCH_COMPLETED, closing_event_name=Events.COMPLETED)
     pbar_valid_other.attach(evaluator_other, [
+                            'wer', 'cer'], event_name=Events.EPOCH_COMPLETED, closing_event_name=Events.COMPLETED)
+    pbar_valid_airtel.attach(evaluator_airtel, [
                             'wer', 'cer'], event_name=Events.EPOCH_COMPLETED, closing_event_name=Events.COMPLETED)
     timer.attach(trainer)
 
@@ -202,17 +215,25 @@ def main():
         engine.state.train_loader_unlabbeled = iter(
             train_loader_unlabbeled_loader)
 
+    @trainer.on(Events.ITERATION_COMPLETED)
+    def iteration_completed(engine):
+        if (engine.state.iteration % 8000 == 0) and (engine.state.iteration > 0):
+            engine.state.epoch += 1
+            train_clean.set_epochs(engine.state.epoch)
+            train_other.set_epochs(engine.state.epoch)
+            model.eval()
+            logger.info('Model set to eval mode')
+            evaluator_clean.run(test_loader_clean)
+            evaluator_other.run(test_loader_other)
+            evaluator_airtel.run(test_loader_airtel)
+            model.train()
+            logger.info('Model set back to train mode')
+
     @trainer.on(Events.EPOCH_COMPLETED)
     def after_complete(engine):
         logger.info('Epoch {} done. Time per batch: {:.3f}[s]'.format(
             engine.state.epoch, timer.value()))
         timer.reset()
-        train_clean.set_epochs(engine.state.epoch)
-        train_other.set_epochs(engine.state.epoch)
-        model.eval()
-        logger.info('Model set to eval mode')
-        evaluator_clean.run(test_loader_clean)
-        evaluator_other.run(test_loader_other)
 
     @evaluator_other.on(Events.EPOCH_COMPLETED)
     def save_checkpoints(engine):

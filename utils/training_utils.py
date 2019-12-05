@@ -58,8 +58,8 @@ def load_checkpoint(model, optimizer, params):
                 for k, v in state.items():
                     if torch.is_tensor(v):
                         state[k] = v.cuda()
-        set_optimizer_learning_rate(optimizer, loader['optimizer_lr'])
-        # set_optimizer_learning_rate(optimizer, config.lr)
+        # set_optimizer_learning_rate(optimizer, loader['optimizer_lr'])
+        set_optimizer_learning_rate(optimizer, config.lr)
         params['best_stats'] = loader['best_stats']
         params['start_epoch'] = loader['epoch']
         logger.info(f'Checkpoint and Optimizer loaded from {checkpoint_path}')

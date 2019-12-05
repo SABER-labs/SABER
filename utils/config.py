@@ -9,6 +9,8 @@ libri_test_other_data_sets = ['test-other']
 libri_dev_data_sets = ['dev-clean', 'dev-other']
 sentencepiece_model = 'dataset_scripts/sp_librispeech_128.model'
 lmdb_root_path = 'lmdb-databases-librispeech_128'
+lmdb_commonvoice_root_path = 'lmdb-databases-common_voice'
+lmdb_airtel_root_path = 'lmdb-databases-airtel'
 log_path = "checkpoints_logs/exp-sp-ctc-vocab128-radam"
 
 # Mel feature configs
@@ -34,20 +36,19 @@ vocab_size = 128
 # Training configs
 gpu_id = '0,1,2'
 workers = 30
-train_batch_size = 16 * len(gpu_id.split(","))
+train_batch_size = 12 * len(gpu_id.split(","))
 epochs = 300
 lr = 1e-3
 cyclic_lr_min = 1e-5
 lr_gamma = 0.1
 lr_decay_step = [2, 70]
 checkpoint_root = 'checkpoints_5x3_radam'
-# checkpoint_version = 'saber_w0.359_c0.175_e29.pth'
 checkpoint_version = ''
 best_model_version = 'best_saber.pth'
 
 # UDA hyper-params
-augment_warmup_epoch = int(epochs * 0.5)
-unsupervision_warmup_epoch = int(epochs * 0.4)
+augment_warmup_epoch = int(epochs * 0.25)
+unsupervision_warmup_epoch = int(epochs * 0.15)
 temperature_softmax = 0.4
 
 # Cutout hyper-params

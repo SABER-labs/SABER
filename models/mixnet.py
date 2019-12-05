@@ -5,41 +5,24 @@ from torch.autograd import Variable
 import math
 from .conv1dlayers import MDConv1d, create_conv1d_pad, PositionalEncoding
 
+@torch.jit.script
+def hswish(x):
+    return x * (F.hardtanh(x+3, 0.0, 6.0, inplace=True) / 6)
 
-class HardSigmoid(nn.Module):
-    def __init__(self, inplace=True):
-        super(HardSigmoid, self).__init__()
-        self.relu6 = nn.ReLU6(inplace=inplace)
+class Mish(torch.jit.ScriptModule):
 
-    def forward(self, x):
-        return (self.relu6(x+3)) / 6
-
-
-class HardSwish(nn.Module):
-    def __init__(self, inplace=True):
-        super(HardSwish, self).__init__()
-        self.hsigmoid = HardSigmoid(inplace=inplace)
-
-    def forward(self, x):
-        return x * self.hsigmoid(x)
-
-
-class Mish(nn.Module):
     def __init__(self):
         super().__init__()
 
+    @torch.jit.script_method
     def forward(self, x):
-        # inlining this saves 1 second per epoch (V100 GPU) vs having a temp x and then returning x(!)
         return x * (torch.tanh(F.softplus(x)))
-
 
 NON_LINEARITY = {
     'ReLU': nn.ReLU6(inplace=True),
-    'Swish': HardSwish(),
-    'Sigmoid': HardSigmoid(),
+    'Swish': hswish,
     'Mish': Mish()
 }
-
 
 def _RoundChannels(c, divisor=8, min_value=None):
     if min_value is None:
@@ -73,7 +56,7 @@ class SqueezeAndExcite(nn.Module):
         self.non_linear1 = NON_LINEARITY['Mish']
         self.se_expand = nn.Conv1d(
             squeeze_channels, channels, 1, 1, 0, bias=True)
-        self.non_linear2 = NON_LINEARITY['Sigmoid']
+        self.non_linear2 = nn.Sigmoid()
 
     def forward(self, x):
         y = torch.mean(x, 2, keepdim=True)
@@ -162,7 +145,6 @@ def form_stage(in_channel, out_channel, start_kernel, stride, growth, non_linear
 class ASRModel(nn.Module):
     # [in_channels, out_channels, kernel_size, stride, expand_ratio, non_linear, se_ratio]
     filters = [9, 11, 15, 19, 23]
-    repeats = 3
     mixnet_speech = []
     add_channels = 128
     in_filter = 256
@@ -170,13 +152,14 @@ class ASRModel(nn.Module):
         stride = 2 if i < 2 else 1
         non_linearity = 'Mish' if i < 1 else 'Mish'
         growth = 1 if i < 1 else 4
+        repeats = 2 if i < 2 else 3
         squeeze_factor = 0.0 if i < 1 else 0.25
         out_channel = in_filter + add_channels  # * (i+1)
         mixnet_speech.extend(form_stage(in_filter, out_channel, filter_i,
                                         stride, growth, non_linearity, squeeze_factor, repeats))
         in_filter = out_channel
 
-    def __init__(self, input_features=80, num_classes=128, depth_multiplier=1.0):
+    def __init__(self, input_features=80, num_classes=128, depth_multiplier=1.4):
         super(ASRModel, self).__init__()
         config = self.mixnet_speech
         stem_channels = 256
@@ -206,13 +189,13 @@ class ASRModel(nn.Module):
 
         # last several layers
         self.head_conv1 = Conv1x1Bn(
-            config[-1][1], self._stage_out_channels, kernel_size=29, non_linear='Mish', dilation=2)
+            config[-1][1], self._stage_out_channels, kernel_size=29, non_linear='Mish')
         self.head_conv2 = Conv1x1Bn(
             self._stage_out_channels, self._stage_out_channels, non_linear='Mish')
         self.dropout = nn.Dropout(dropout_rate)
         self.classifier = nn.Linear(self._stage_out_channels, num_classes)
         decoder_layers = nn.TransformerEncoderLayer(self._stage_out_channels, 8, dim_feedforward=max(1024, int(1.5 * self._stage_out_channels)), dropout=0.1, activation='gelu')
-        self.decoder = nn.TransformerEncoder(decoder_layers, num_layers=3)
+        self.decoder = nn.TransformerEncoder(decoder_layers, num_layers=1)
         self.pos_encoding = PositionalEncoding(self._stage_out_channels, max_len=1000, dropout=0.1)
         self._initialize_weights()
 

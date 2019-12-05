@@ -4,12 +4,13 @@ import lmdb # install lmdb by "pip install lmdb"
 import cv2
 import numpy as np
 import msgpack
+from bisect import bisect_right
 import msgpack_numpy as m
 from torch.utils.data import Dataset
 from tqdm import tqdm
-from .logger import logger
+from utils.logger import logger
 from joblib import Parallel, delayed
-from .config import num_cores
+from utils.config import num_cores, train_batch_size
 m.patch()
 
 def writeCache(env, cache):
@@ -128,39 +129,24 @@ class lmdbDataset(Dataset):
 
             return (img, label, self.epochs)
 
-class lmdbDoubleDataset(Dataset):
+class lmdbMultiDataset(Dataset):
 
-    def __init__(self, root1=None, root2=None, transform=None, target_transform=None):
+    def __init__(self, roots=[], transform=None, target_transform=None):
         super().__init__()
-        self.env1 = lmdb.open(
-            root1,
-            max_readers=1,
-            readonly=True,
-            lock=False,
-            readahead=False,
-            meminit=False)
-
-        self.env2 = lmdb.open(
-            root2,
-            max_readers=1,
-            readonly=True,
-            lock=False,
-            readahead=False,
-            meminit=False)
-
-        if not self.env1 or not self.env2:
-            logger.info(f'cannot open lmdb from {root1} or {root2}')
-            sys.exit(0)
-
-        with self.env1.begin(write=False) as txn:
-            nSamples1 = int(txn.get('num-samples'.encode('ascii')))
-
-        with self.env2.begin(write=False) as txn:
-            nSamples2 = int(txn.get('num-samples'.encode('ascii')))
-            
-        self.nSamples = nSamples1 + nSamples2
-
-        self.cutoff = nSamples1
+        self.nSamples = 0
+        self.cutoffs = [0]
+        for i, root in enumerate(roots):
+            setattr(self, f'env{i}', lmdb.open(
+                root,
+                max_readers=1,
+                readonly=True,
+                lock=False,
+                readahead=False,
+                meminit=False))
+            with getattr(self, f'env{i}').begin(write=False) as txn:
+                nSamples_dataset = int(txn.get('num-samples'.encode('ascii')))
+            self.nSamples += nSamples_dataset
+            self.cutoffs.append(self.nSamples)
 
         self.transform = transform
         self.target_transform = target_transform
@@ -174,11 +160,9 @@ class lmdbDoubleDataset(Dataset):
 
     def __getitem__(self, index):
         assert index <= len(self), 'index range error'
-        if index >= self.cutoff:
-            index = index - self.cutoff
-            env = self.env2
-        else:
-            env = self.env1
+        bisect_index = bisect_right(self.cutoffs, index) - 1
+        index -= self.cutoffs[bisect_index]
+        env = getattr(self, f'env{bisect_index}')
         with env.begin(write=False) as txn:
             data_key = f'data-{index:09d}'.encode('ascii')
             data_enc = txn.get(data_key)
@@ -196,3 +180,14 @@ class lmdbDoubleDataset(Dataset):
                 label = self.target_transform(label)
 
             return (img, label, self.epochs)
+
+if __name__ == "__main__":
+    from utils.config import lmdb_root_path
+    from datasets.librispeech import sequence_to_string
+    lmdb_commonvoice_root_path = "lmdb-databases-common_voice"
+    trainCleanPath = os.path.join(lmdb_root_path, 'train-labelled')
+    trainOtherPath = os.path.join(lmdb_root_path, 'train-unlabelled')    
+    trainCommonVoicePath = os.path.join(lmdb_commonvoice_root_path, 'train-labelled-en')
+    roots = [trainCleanPath, trainOtherPath, trainCommonVoicePath]
+    dataset = lmdbMultiDataset(roots=roots)
+    print(sequence_to_string(dataset[np.random.choice(len(dataset))][1].tolist()))
