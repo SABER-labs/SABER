@@ -8,7 +8,7 @@ from utils.logger import logger
 
 sp = spm.SentencePieceProcessor()
 sp.Load(config.sentencepiece_model)
-
+logger.info(f'{config.sentencepiece_model} has been loaded!')
 
 def convert_to_mel(signal):
     data = {'samples': signal.squeeze(0), 'sample_rate': config.sampling_rate}

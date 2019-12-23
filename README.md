@@ -70,6 +70,8 @@ References
 
 [RandAugment: Practical data augmentation with no separate search](https://arxiv.org/abs/1909.13719)
 
+[Self-Attention Networks For Connectionist Temporal Classification in Speech Recognition](https://arxiv.org/pdf/1901.10055.pdf)
+
 ## Codebases
 
 [DeepSpeech2](https://github.com/PaddlePaddle/DeepSpeech)

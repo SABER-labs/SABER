@@ -79,56 +79,6 @@ def createDataset_single(outputPath, dataset, img_transform=None, label_transfor
     writeCache(env, cache)
     logger.info(f'Created dataset with {nSamples:d} samples')
 
-class lmdbDataset(Dataset):
-
-    def __init__(self, root=None, transform=None, target_transform=None):
-        super().__init__()
-        self.env = lmdb.open(
-            root,
-            max_readers=1,
-            readonly=True,
-            lock=False,
-            readahead=False,
-            meminit=False)
-
-        if not self.env:
-            logger.info(f'cannot open lmdb from {root}')
-            sys.exit(0)
-
-        with self.env.begin(write=False) as txn:
-            nSamples = int(txn.get('num-samples'.encode('ascii')))
-            self.nSamples = nSamples
-
-        self.transform = transform
-        self.target_transform = target_transform
-        self.epochs = 0
-
-    def __len__(self):
-        return self.nSamples
-
-    def set_epochs(self, epoch):
-        self.epochs = epoch
-
-    def __getitem__(self, index):
-        assert index <= len(self), 'index range error'
-        with self.env.begin(write=False) as txn:
-            data_key = f'data-{index:09d}'.encode('ascii')
-            data_enc = txn.get(data_key)
-            if not data_enc:
-                return self.__getitem__(np.random.choice(range(len(self))))
-            data = msgpack.unpackb(data_enc, object_hook=m.decode, raw=False)
-
-            img = data['img']
-            label = data['label']
-
-            if self.transform is not None:
-                img = self.transform(img)
-
-            if self.target_transform is not None:
-                label = self.target_transform(label)
-
-            return (img, label, self.epochs)
-
 class lmdbMultiDataset(Dataset):
 
     def __init__(self, roots=[], transform=None, target_transform=None):
@@ -185,9 +135,12 @@ if __name__ == "__main__":
     from utils.config import lmdb_root_path
     from datasets.librispeech import sequence_to_string
     lmdb_commonvoice_root_path = "lmdb-databases-common_voice"
+    lmdb_airtel_root_path = "lmdb-databases-airtel"
     trainCleanPath = os.path.join(lmdb_root_path, 'train-labelled')
     trainOtherPath = os.path.join(lmdb_root_path, 'train-unlabelled')    
     trainCommonVoicePath = os.path.join(lmdb_commonvoice_root_path, 'train-labelled-en')
+    testAirtelPath = os.path.join(lmdb_airtel_root_path, 'test-labelled-en')
     roots = [trainCleanPath, trainOtherPath, trainCommonVoicePath]
-    dataset = lmdbMultiDataset(roots=roots)
+    # dataset = lmdbMultiDataset(roots=roots)
+    dataset = lmdbMultiDataset(roots=[testAirtelPath])
     print(sequence_to_string(dataset[np.random.choice(len(dataset))][1].tolist()))

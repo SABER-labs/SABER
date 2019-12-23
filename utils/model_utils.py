@@ -6,6 +6,9 @@ def get_most_probable(tensor):
     sentences = [get_sentence(seq) for seq in preds_idx.tolist()]
     return sentences
 
+def get_model_size(model):
+    return sum(p.numel() for p in model.parameters())/1000000.0
+
 class HLoss(nn.Module):
     def __init__(self):
         super(HLoss, self).__init__()

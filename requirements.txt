@@ -17,3 +17,4 @@ nemo-toolkit
 nemo-asr
 nemo-nlp
 torch-lr-finder
+torchviz

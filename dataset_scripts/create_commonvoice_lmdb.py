@@ -1,5 +1,5 @@
 from audtorch import datasets, transforms
-from utils.config import max_audio_length_in_secs, sampling_rate, max_label_length, min_audio_length_in_secs
+from utils.config import max_audio_length_in_secs, sampling_rate, max_label_length, min_audio_length_in_secs, lmdb_commonvoice_root_path
 from utils.lmdb import createDataset_single as createDataset
 from utils.logger import logger
 from datasets.librispeech import convert_to_mel, label_transform
@@ -12,7 +12,7 @@ def exclude_func(img, label):
     return not ((min_audio_length_in_secs <= (audio_size / sampling_rate) <= max_audio_length_in_secs) and (label_size <= max_label_length))
 
 if __name__ == '__main__':
-    lmdb_root_path = "lmdb-databases-common_voice"
+    lmdb_root_path = lmdb_commonvoice_root_path
     commonvoice_dataset_root = "/tts_data/asrdata/common_voice_v3"
     language_codes = ["en"]
 

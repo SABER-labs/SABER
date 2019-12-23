@@ -7,11 +7,11 @@ libri_unlabeled_data_sets = ['train-clean-360', 'train-other-500']
 libri_test_clean_data_sets = ['test-clean']
 libri_test_other_data_sets = ['test-other']
 libri_dev_data_sets = ['dev-clean', 'dev-other']
-sentencepiece_model = 'dataset_scripts/sp_librispeech_128.model'
-lmdb_root_path = 'lmdb-databases-librispeech_128'
-lmdb_commonvoice_root_path = 'lmdb-databases-common_voice'
-lmdb_airtel_root_path = 'lmdb-databases-airtel'
-log_path = "checkpoints_logs/exp-sp-ctc-vocab128-radam"
+vocab_size = 128
+sentencepiece_model = f'dataset_scripts/sp_librispeech_{vocab_size}.model'
+lmdb_root_path = f'lmdb-databases-librispeech_{vocab_size}'
+lmdb_commonvoice_root_path = f'lmdb-databases-common_voice_{vocab_size}'
+lmdb_airtel_root_path = f'lmdb-databases-airtel_{vocab_size}'
 
 # Mel feature configs
 sampling_rate = 16000
@@ -30,19 +30,19 @@ ref_db = 20
 max_db = 100
 
 # Model training configs
-num_cores = 24
-vocab_size = 128
+num_cores = 10
 
 # Training configs
 gpu_id = '0,1,2'
 workers = 30
-train_batch_size = 12 * len(gpu_id.split(","))
+train_batch_size = 32 * len(gpu_id.split(","))
 epochs = 300
 lr = 1e-3
 cyclic_lr_min = 1e-5
 lr_gamma = 0.1
 lr_decay_step = [2, 70]
-checkpoint_root = 'checkpoints_5x3_radam'
+checkpoint_root = 'checkpoints_saber_1024'
+log_path = f"checkpoints_logs/exp-{checkpoint_root}"
 checkpoint_version = ''
 best_model_version = 'best_saber.pth'
 

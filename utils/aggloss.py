@@ -41,6 +41,25 @@ class FocalACELoss(ACELoss):
         return self.alpha * torch.pow((1-p), self.gamma) * loss
 
 
+class CustomCTCLoss(nn.Module):
+
+    def forward(self, probs, targets, input_lengths, target_lengths):
+        log_probs = torch.log_softmax(probs, dim=1)
+        log_probs = log_probs.permute(2, 0, 1)
+        return F.ctc_loss(log_probs, targets, input_lengths, target_lengths, zero_infinity=True)
+
+class CustomFocalCTCLoss(CustomCTCLoss):
+
+    def __init__(self, alpha=1.0, gamma=2.0):
+        super().__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+
+    def forward(self, probs, targets, input_lengths, target_lengths):
+        loss = super().forward(probs, targets, input_lengths, target_lengths)
+        p = torch.exp(-loss)
+        return self.alpha * torch.pow((1-p), self.gamma) * loss
+
 class UDALoss(nn.Module):
 
     def forward(self, probs_imgs, probs_aug_imgs):
@@ -52,15 +71,6 @@ class UDALoss(nn.Module):
         probs1 = probs1/T_
         probs2 = probs2/T_
         return F.kl_div(torch.log(probs2), probs1, reduction="batchmean")
-
-
-class CustomCTCLoss(nn.Module):
-
-    def forward(self, probs, targets, input_lengths, target_lengths):
-        log_probs = torch.log_softmax(probs, dim=1)
-        log_probs = log_probs.permute(2, 0, 1)
-        return F.ctc_loss(log_probs, targets, input_lengths, target_lengths, zero_infinity=True)
-
 
 class FocalUDALoss(UDALoss):
 

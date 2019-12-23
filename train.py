@@ -1,4 +1,4 @@
-from utils.model_utils import get_most_probable
+from utils.model_utils import get_most_probable, get_model_size
 from datasets.librispeech import get_sentence
 
 from utils import config
@@ -8,7 +8,7 @@ from models.mixnet import ASRModel
 from utils.logger import logger
 from functools import partial
 from datasets.librispeech import allign_collate, align_collate_unlabelled, allign_collate_val
-from utils.lmdb import lmdbDataset, lmdbMultiDataset
+from utils.lmdb import lmdbMultiDataset
 from utils.training_utils import save_checkpoint, BestMeter
 from utils.config import lmdb_root_path, workers, train_batch_size, unsupervision_warmup_epoch, log_path, epochs, lmdb_commonvoice_root_path, lmdb_airtel_root_path
 import ignite
@@ -21,7 +21,7 @@ from ignite.contrib.handlers.tqdm_logger import ProgressBar
 from utils.optimizers import RAdam, NovoGrad, Ranger
 from utils.cyclicLR import CyclicCosAnnealingLR
 from utils.loss_scaler import DynamicLossScaler
-from utils.aggloss import ACELoss, UDALoss, CustomCTCLoss, FocalACELoss, FocalUDALoss
+from utils.aggloss import ACELoss, UDALoss, CustomCTCLoss, FocalACELoss, FocalUDALoss, CustomFocalCTCLoss
 from utils.training_utils import load_checkpoint
 import numpy as np
 import toml
@@ -52,10 +52,11 @@ def main():
     model = ASRModel(input_features=config.num_mel_banks,
                      num_classes=config.vocab_size).to(device)
     model = torch.nn.DataParallel(model)
-    optimizer = Ranger(model.parameters(), lr=config.lr, eps=1e-5)
+    logger.info(f'Model initialized with {get_model_size(model):.3f}M parameters')
+    optimizer = Ranger(model.parameters(), lr=config.lr, eps=1e-8)
     load_checkpoint(model, optimizer, params)
     start_epoch = params['start_epoch']
-    sup_criterion = CustomCTCLoss()
+    sup_criterion = CustomFocalCTCLoss()
     unsup_criterion = UDALoss()
     tb_logger = TensorboardLogger(log_dir=log_path)
     pbar = ProgressBar(persist=True, desc="Training")
@@ -77,11 +78,11 @@ def main():
 
     train_clean = lmdbMultiDataset(
         roots=[trainCleanPath, trainOtherPath, trainCommonVoicePath, trainAirtelPath])
-    train_other = lmdbDataset(root=devOtherPath)
+    train_other = lmdbMultiDataset(roots=[devOtherPath])
 
-    test_clean = lmdbDataset(root=testCleanPath)
-    test_other = lmdbDataset(root=testOtherPath)
-    test_airtel = lmdbDataset(root=testAirtelPath)
+    test_clean = lmdbMultiDataset(roots=[testCleanPath])
+    test_other = lmdbMultiDataset(roots=[testOtherPath])
+    test_airtel = lmdbMultiDataset(roots=[testAirtelPath])
 
     logger.info(
         f'Loaded Train & Test Datasets, train_labbeled={len(train_clean)}, train_unlabbeled={len(train_other)}, test_clean={len(test_clean)}, test_other={len(test_other)}, test_airtel={len(test_airtel)} examples')
@@ -211,13 +212,14 @@ def main():
     def set_model_train(engine):
         model.train()
         logger.info('Model set to train mode')
+        engine.state.iteration_log_step = int(0.33 * len(train_loader_labbeled_loader))
         engine.state.train_loader_labbeled = iter(train_loader_labbeled_loader)
         engine.state.train_loader_unlabbeled = iter(
             train_loader_unlabbeled_loader)
 
     @trainer.on(Events.ITERATION_COMPLETED)
     def iteration_completed(engine):
-        if (engine.state.iteration % 8000 == 0) and (engine.state.iteration > 0):
+        if (engine.state.iteration % engine.state.iteration_log_step == 0) and (engine.state.iteration > 0):
             engine.state.epoch += 1
             train_clean.set_epochs(engine.state.epoch)
             train_other.set_epochs(engine.state.epoch)

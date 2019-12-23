@@ -4,25 +4,17 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import math
 from .conv1dlayers import MDConv1d, create_conv1d_pad, PositionalEncoding
-
-@torch.jit.script
-def hswish(x):
-    return x * (F.hardtanh(x+3, 0.0, 6.0, inplace=True) / 6)
-
-class Mish(torch.jit.ScriptModule):
-
-    def __init__(self):
-        super().__init__()
-
-    @torch.jit.script_method
-    def forward(self, x):
-        return x * (torch.tanh(F.softplus(x)))
+from .activations_jit import MishJit, SwishJit
+from .activations import HardSwish, HardSigmoid
+from .excite_layers import EfficientChannelAttention
 
 NON_LINEARITY = {
     'ReLU': nn.ReLU6(inplace=True),
-    'Swish': hswish,
-    'Mish': Mish()
+    'Swish': HardSwish(inplace=True),
+    'Sigmoid': HardSigmoid(inplace=True),
+    'Mish': MishJit(inplace=True)
 }
+
 
 def _RoundChannels(c, divisor=8, min_value=None):
     if min_value is None:
@@ -42,38 +34,12 @@ def Conv1x1Bn(in_channels, out_channels, non_linear='Mish', kernel_size=1, dilat
     )
 
 
-class SqueezeAndExcite(nn.Module):
-    def __init__(self, channels, se_ratio):
-        super(SqueezeAndExcite, self).__init__()
-
-        squeeze_channels = channels * se_ratio
-        if not squeeze_channels.is_integer():
-            raise ValueError('channels must be divisible by 1/ratio')
-
-        squeeze_channels = int(squeeze_channels)
-        self.se_reduce = nn.Conv1d(
-            channels, squeeze_channels, 1, 1, 0, bias=True)
-        self.non_linear1 = NON_LINEARITY['Mish']
-        self.se_expand = nn.Conv1d(
-            squeeze_channels, channels, 1, 1, 0, bias=True)
-        self.non_linear2 = nn.Sigmoid()
-
-    def forward(self, x):
-        y = torch.mean(x, 2, keepdim=True)
-        y = self.non_linear1(self.se_reduce(y))
-        y = self.non_linear2(self.se_expand(y))
-        y = x * y
-
-        return y
-
-
 class MixNetBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride, expand_ratio, non_linear='Mish', se_ratio=0.0, drop_connect_rate=0.00):
+    def __init__(self, in_channels, out_channels, kernel_size, stride, expand_ratio, non_linear='Mish', sq_ex=False, drop_connect_rate=0.1):
         super(MixNetBlock, self).__init__()
 
         expand = (expand_ratio != 1)
         expand_channels = in_channels * expand_ratio
-        se = (se_ratio != 0.0)
         self.drop_connect_rate = drop_connect_rate
         self.residual_connection = (
             stride == 1 and in_channels == out_channels)
@@ -97,10 +63,10 @@ class MixNetBlock(nn.Module):
         )
         conv.append(dw)
 
-        if se:
+        if sq_ex:
             # squeeze and excite
             squeeze_excite = nn.Sequential(
-                SqueezeAndExcite(expand_channels, se_ratio))
+                EfficientChannelAttention(expand_channels))
             conv.append(squeeze_excite)
 
         # projection phase
@@ -124,7 +90,7 @@ class MixNetBlock(nn.Module):
 
     def forward(self, x):
         if self.residual_connection:
-            return x + self.conv(x)
+            return x + self._drop_connect(self.conv(x))
         else:
             return self.conv(x)
 
@@ -133,47 +99,54 @@ def custom_range(start, num, inc):
     return list(range(start, start + (num * inc), inc))
 
 
-def form_stage(in_channel, out_channel, start_kernel, stride, growth, non_linearity, squeeze_factor, repeats):
-    params = [(in_channel, out_channel, custom_range(
-        start_kernel, 5, 2), stride, growth, non_linearity, squeeze_factor)]
-    for i in range(1, repeats):
-        params.append((out_channel, out_channel, custom_range(
-            start_kernel, 5, 2), 1, growth, non_linearity, squeeze_factor))
+def form_stage(in_channel, out_channel, start_kernel, stride, growth, non_linearity, sq_ex, repeats):
+    params = []
+    for i in range(repeats - 1):
+        params.append((in_channel, in_channel, custom_range(
+            start_kernel, 5, 2), 1, growth, non_linearity, sq_ex))
+    params.append((in_channel, out_channel, custom_range(
+        start_kernel, 5, 2), stride, growth, non_linearity, sq_ex))
     return params
 
 
 class ASRModel(nn.Module):
-    # [in_channels, out_channels, kernel_size, stride, expand_ratio, non_linear, se_ratio]
-    filters = [9, 11, 15, 19, 23]
+    # [in_channels, out_channels, kernel_size, stride, growth_factor_for_inv_res, non_linear, squeeze_excite]
+    filters = [9, 11, 13, 15, 17]
+    strides = [2, 1, 2, 1, 1]
+    growths = [1, 6, 6, 6, 6]
+    squeeze_excites = [False, True, True, True, True]
+    repeats = [2, 2, 3, 3, 3]
+    non_linearities = ['ReLU', 'ReLU', 'Mish', 'Mish', 'Mish']
+    in_channels =  [24, 56, 152, 344, 568]
+    out_channels = [56, 152, 344, 568, 568]
     mixnet_speech = []
-    add_channels = 128
-    in_filter = 256
     for i, filter_i in enumerate(filters):
-        stride = 2 if i < 2 else 1
-        non_linearity = 'Mish' if i < 1 else 'Mish'
-        growth = 1 if i < 1 else 4
-        repeats = 2 if i < 2 else 3
-        squeeze_factor = 0.0 if i < 1 else 0.25
-        out_channel = in_filter + add_channels  # * (i+1)
-        mixnet_speech.extend(form_stage(in_filter, out_channel, filter_i,
-                                        stride, growth, non_linearity, squeeze_factor, repeats))
+        growth = growths[i]
+        sq_ex = squeeze_excites[i]
+        stride = strides[i]
+        repeat = repeats[i]
+        out_channel = out_channels[i]
+        in_channel = in_channels[i]
+        non_linearity = non_linearities[i]
+        mixnet_speech.extend(form_stage(in_channel, out_channel, filter_i,
+                                        stride, growth, non_linearity, sq_ex, repeat))
         in_filter = out_channel
 
-    def __init__(self, input_features=80, num_classes=128, depth_multiplier=1.4):
+    def __init__(self, input_features=80, num_classes=128, width_multiplier=1.0):
         super(ASRModel, self).__init__()
         config = self.mixnet_speech
-        stem_channels = 256
-        dropout_rate = 0.3
-
-        self._stage_out_channels = _RoundChannels(1024 * depth_multiplier)
+        stem_channels = 24
+        final_channels = 728
+        dropout_rate = 0.1
 
         # depth multiplier
-        stem_channels = _RoundChannels(stem_channels*depth_multiplier)
+        stem_channels = _RoundChannels(stem_channels*width_multiplier)
+        self._stage_out_channels = _RoundChannels(final_channels * width_multiplier)
 
         for i, conf in enumerate(config):
             conf_ls = list(conf)
-            conf_ls[0] = _RoundChannels(conf_ls[0]*depth_multiplier)
-            conf_ls[1] = _RoundChannels(conf_ls[1]*depth_multiplier)
+            conf_ls[0] = _RoundChannels(conf_ls[0]*width_multiplier)
+            conf_ls[1] = _RoundChannels(conf_ls[1]*width_multiplier)
             config[i] = tuple(conf_ls)
 
         # stem convolution
@@ -183,20 +156,21 @@ class ASRModel(nn.Module):
         # building MixNet blocks
         layers = []
         for in_channels, out_channels, kernel_size, stride, expand_ratio, non_linear, se_ratio in config:
-            layers.append(MixNetBlock(in_channels, out_channels, kernel_size, stride, expand_ratio, non_linear, se_ratio))
-            
+            layers.append(MixNetBlock(in_channels, out_channels,
+                                      kernel_size, stride, expand_ratio, non_linear, se_ratio))
+
         self.layers = nn.Sequential(*layers)
 
         # last several layers
         self.head_conv1 = Conv1x1Bn(
-            config[-1][1], self._stage_out_channels, kernel_size=29, non_linear='Mish')
+            config[-1][1], self._stage_out_channels, kernel_size=27, non_linear='Mish', dilation=2)
         self.head_conv2 = Conv1x1Bn(
             self._stage_out_channels, self._stage_out_channels, non_linear='Mish')
         self.dropout = nn.Dropout(dropout_rate)
-        self.classifier = nn.Linear(self._stage_out_channels, num_classes)
-        decoder_layers = nn.TransformerEncoderLayer(self._stage_out_channels, 8, dim_feedforward=max(1024, int(1.5 * self._stage_out_channels)), dropout=0.1, activation='gelu')
-        self.decoder = nn.TransformerEncoder(decoder_layers, num_layers=1)
-        self.pos_encoding = PositionalEncoding(self._stage_out_channels, max_len=1000, dropout=0.1)
+        self.classifier = nn.Conv1d(self._stage_out_channels, num_classes, 1, 1, bias=False)
+        # decoder_layers = nn.TransformerEncoderLayer(self._stage_out_channels, 16, dim_feedforward=2048, dropout=0.1, activation='gelu')
+        # self.decoder = nn.TransformerEncoder(decoder_layers, num_layers=2)
+        # self.pos_encoding = PositionalEncoding(self._stage_out_channels, max_len=750, dropout=0.1)
         self._initialize_weights()
 
     def forward(self, x):
@@ -205,16 +179,13 @@ class ASRModel(nn.Module):
         x = self.head_conv1(x)
         x = self.head_conv2(x)
 
-        
-        x = x.permute(2, 0, 1)
-        x = self.pos_encoding(x)
-        x = self.decoder(x)
-        x = x.permute(1, 2, 0)
+        # x = x.permute(2, 0, 1)
+        # x = self.pos_encoding(x)
+        # x = self.decoder(x)
+        # x = x.permute(1, 2, 0)
 
         x = self.dropout(x)
-        x = x.permute(0, 2, 1)
         x = self.classifier(x)
-        x = x.permute(0, 2, 1)
         return x
 
     def _initialize_weights(self, n=''):
@@ -228,7 +199,7 @@ class ASRModel(nn.Module):
                 m.weight.data.fill_(1.0)
                 m.bias.data.zero_()
             elif isinstance(m, nn.Linear):
-                fan_out = m.weight.size(0)  # fan-out
+                fan_out = m.weight.size(0)
                 fan_in = 0
                 if 'routing_fn' in n:
                     fan_in = m.weight.size(1)
@@ -242,13 +213,17 @@ if __name__ == '__main__':
     from torchsummary import summary
     from time import time
     from utils import config
+    from torchviz import make_dot
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     net = ASRModel(input_features=config.num_mel_banks,
                    num_classes=config.vocab_size).to(device)
+    print('Total params: %.2fM' % (sum(p.numel()
+                                       for p in net.parameters())/1000000.0))
     with torch.no_grad():
-        summary(net, (config.num_mel_banks, 500), batch_size=1, device=device)
+        # summary(net, (config.num_mel_banks, 500), batch_size=1, device=device)
         image = torch.randn(1, config.num_mel_banks, 500).to(device)
         start = time()
         y = net(image)
+        make_dot(y)
         print(y.shape)
         print(f"time taken is {time()-start:.3f}s")
