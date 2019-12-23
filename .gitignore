@@ -52,3 +52,4 @@ ipython_config.py
 1cycle_policy_images
 dataset_scripts/*.model
 dataset_scripts/*.vocab
+checkpoint*
