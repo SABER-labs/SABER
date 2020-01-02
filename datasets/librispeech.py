@@ -23,7 +23,7 @@ def convert_to_mel(signal):
 def image_train_transform(spec, epoch):
     data = {'mel_spectrogram': spec,
             'sample_rate': config.sampling_rate, 'epoch': epoch}
-    frac_to_apply = np.clip(epoch / config.augment_warmup_epoch, 0.1, 0.85)
+    frac_to_apply = np.clip(epoch / config.augment_warmup_epoch, 0.15, 0.85)
     random_apply_specaugment = RandomApply([RandomChoice([SpecAugmentOnMel(), SpecSprinkleOnMel(), SpecBlurring(), SpecNoise(), SpecCompress()])], p=frac_to_apply)
     transforms = Compose([random_apply_specaugment, ToAudioTensor(
         ['mel_spectrogram']), torch.from_numpy])

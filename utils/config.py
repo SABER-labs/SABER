@@ -33,15 +33,15 @@ max_db = 100
 num_cores = 10
 
 # Training configs
-gpu_id = '0,1,2'
+gpu_id = '1,2'
 workers = 30
-train_batch_size = 32 * len(gpu_id.split(","))
+train_batch_size = 24 * len(gpu_id.split(","))
 epochs = 300
 lr = 1e-3
 cyclic_lr_min = 1e-5
 lr_gamma = 0.1
 lr_decay_step = [2, 70]
-checkpoint_root = 'checkpoints_saber_1024'
+checkpoint_root = f'checkpoints_saber_{vocab_size}'
 log_path = f"checkpoints_logs/exp-{checkpoint_root}"
 checkpoint_version = ''
 best_model_version = 'best_saber.pth'
@@ -59,3 +59,8 @@ max_sprinkles = 20
 config_time_warp = 80
 config_freq_width = 20
 config_time_width = 20
+
+#Server configs
+host_ip = '0.0.0.0'
+port = 8088
+server_checkpoint = 'checkpoint/best_saber.pth'

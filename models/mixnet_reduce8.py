@@ -112,7 +112,7 @@ def form_stage(in_channel, out_channel, start_kernel, stride, growth, non_linear
 class ASRModel(nn.Module):
     # [in_channels, out_channels, kernel_size, stride, growth_factor_for_inv_res, non_linear, squeeze_excite]
     filters = [9, 11, 13, 15, 17]
-    strides = [2, 1, 1, 1, 1]
+    strides = [2, 1, 2, 1, 1]
     growths = [1, 6, 6, 6, 6]
     squeeze_excites = [False, True, True, True, True]
     repeats = [2, 2, 3, 3, 3]
@@ -132,11 +132,11 @@ class ASRModel(nn.Module):
                                         stride, growth, non_linearity, sq_ex, repeat))
         in_filter = out_channel
 
-    def __init__(self, input_features=80, num_classes=128, width_multiplier=1.0):
+    def __init__(self, input_features=80, num_classes=128, width_multiplier=1.2):
         super(ASRModel, self).__init__()
         config = self.mixnet_speech
         stem_channels = 24
-        final_channels = 768
+        final_channels = 728
         dropout_rate = 0.1
 
         # depth multiplier
@@ -168,9 +168,6 @@ class ASRModel(nn.Module):
             self._stage_out_channels, self._stage_out_channels, non_linear='Mish')
         self.dropout = nn.Dropout(dropout_rate)
         self.classifier = nn.Conv1d(self._stage_out_channels, num_classes, 1, 1, bias=True)
-        # decoder_layers = nn.TransformerEncoderLayer(self._stage_out_channels, 32, dim_feedforward=1024, dropout=0.1, activation='relu')
-        # self.decoder = nn.TransformerEncoder(decoder_layers, num_layers=1)
-        # self.pos_encoding = PositionalEncoding(self._stage_out_channels, max_len=750, dropout=0.1)
         self._initialize_weights()
 
     def forward(self, x):
@@ -178,12 +175,6 @@ class ASRModel(nn.Module):
         x = self.layers(x)
         x = self.head_conv1(x)
         x = self.head_conv2(x)
-
-        # x = x.permute(2, 0, 1)
-        # x = self.pos_encoding(x)
-        # x = self.decoder(x)
-        # x = x.permute(1, 2, 0)
-
         x = self.dropout(x)
         x = self.classifier(x)
         return x

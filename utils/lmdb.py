@@ -13,6 +13,15 @@ from joblib import Parallel, delayed
 from utils.config import num_cores, train_batch_size
 m.patch()
 
+def sort_libri_dataset(dataset):
+    logger.info('Begining to sort Dataset')
+    # lengths = []
+    # for i in range(len(dataset)):
+    #     lengths.append(dataset[i][0].shape[1])
+    # sorted_idx = np.argsort(lengths)
+    # dataset.files = np.array(dataset.files)[sorted_idx].tolist()
+    # dataset.targets = np.array(dataset.targets)[sorted_idx].tolist()
+
 def writeCache(env, cache):
     with env.begin(write=True) as txn:
         for k, value in cache.items():
@@ -20,6 +29,7 @@ def writeCache(env, cache):
             txn.put(key, value)
 
 def createDataset_parallel(outputPath, dataset, img_transform=None, label_transform=None, exclude_func=None, n_jobs=num_cores):
+    sort_libri_dataset(dataset)
     nSamples = len(dataset)
     env = lmdb.open(outputPath, map_size=1099511627776)
     logger.info(f'Begining to create dataset at {outputPath}')
@@ -54,6 +64,7 @@ def fillCache(index, dataset, cache, img_transform=None, label_transform=None, e
     cache[dataKey] = msgpack.packb({'img': img, 'label': label_transformed}, default=m.encode, use_bin_type=True)
     
 def createDataset_single(outputPath, dataset, img_transform=None, label_transform=None, exclude_func=None):
+    sort_libri_dataset(dataset)
     nSamples = len(dataset)
     env = lmdb.open(outputPath, map_size=1099511627776)
     logger.info(f'Begining to create dataset at {outputPath}')

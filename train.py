@@ -4,7 +4,7 @@ from datasets.librispeech import get_sentence
 from utils import config
 import os
 import torch
-from models.mixnet import ASRModel
+from models.mixnet_dynamic import ASRModel
 from utils.logger import logger
 from functools import partial
 from datasets.librispeech import allign_collate, align_collate_unlabelled, allign_collate_val

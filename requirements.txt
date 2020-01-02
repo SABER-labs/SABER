@@ -18,3 +18,4 @@ nemo-asr
 nemo-nlp
 torch-lr-finder
 torchviz
+fairseq
