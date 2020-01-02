@@ -33,7 +33,7 @@ max_db = 100
 num_cores = 10
 
 # Training configs
-gpu_id = '1,2'
+gpu_id = '0,1,2'
 workers = 30
 train_batch_size = 24 * len(gpu_id.split(","))
 epochs = 300
