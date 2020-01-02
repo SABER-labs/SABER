@@ -163,14 +163,14 @@ class ASRModel(nn.Module):
 
         # last several layers
         self.head_conv1 = Conv1x1Bn(
-            config[-1][1], self._stage_out_channels, kernel_size=27, non_linear='Mish', dilation=2)
+            config[-1][1], self._stage_out_channels, kernel_size=27, non_linear='Mish', dilation=1)
         self.head_conv2 = Conv1x1Bn(
             self._stage_out_channels, self._stage_out_channels, non_linear='Mish')
         self.dropout = nn.Dropout(dropout_rate)
         self.classifier = nn.Conv1d(self._stage_out_channels, num_classes, 1, 1, bias=True)
-        # decoder_layers = nn.TransformerEncoderLayer(self._stage_out_channels, 32, dim_feedforward=1024, dropout=0.1, activation='relu')
-        # self.decoder = nn.TransformerEncoder(decoder_layers, num_layers=1)
-        # self.pos_encoding = PositionalEncoding(self._stage_out_channels, max_len=750, dropout=0.1)
+        decoder_layers = nn.TransformerEncoderLayer(self._stage_out_channels, 32, dim_feedforward=1024, dropout=0.1, activation='relu')
+        self.decoder = nn.TransformerEncoder(decoder_layers, num_layers=1)
+        self.pos_encoding = PositionalEncoding(self._stage_out_channels, max_len=750, dropout=0.1)
         self._initialize_weights()
 
     def forward(self, x):
@@ -179,10 +179,10 @@ class ASRModel(nn.Module):
         x = self.head_conv1(x)
         x = self.head_conv2(x)
 
-        # x = x.permute(2, 0, 1)
-        # x = self.pos_encoding(x)
-        # x = self.decoder(x)
-        # x = x.permute(1, 2, 0)
+        x = x.permute(2, 0, 1)
+        x = self.pos_encoding(x)
+        x = self.decoder(x)
+        x = x.permute(1, 2, 0)
 
         x = self.dropout(x)
         x = self.classifier(x)
