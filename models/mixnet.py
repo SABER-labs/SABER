@@ -25,14 +25,36 @@ def _RoundChannels(c, divisor=8, min_value=None):
     return new_c
 
 
-def Conv1x1Bn(in_channels, out_channels, non_linear='Mish', kernel_size=1, dilation=1, stride=1, bias=False):
-    return nn.Sequential(
-        create_conv1d_pad(in_channels, out_channels, kernel_size, stride=stride,
-                          padding='same', dilation=dilation, bias=bias),
-        nn.BatchNorm1d(out_channels),
-        NON_LINEARITY[non_linear]
-    )
+def Conv1x1Bn(in_channels, out_channels, non_linear='Mish', kernel_size=1, dilation=1, stride=1, bias=False, non_linearity=True):
+    if non_linearity:
+        return nn.Sequential(
+            create_conv1d_pad(in_channels, out_channels, kernel_size, stride=stride,
+                            padding='same', dilation=dilation, bias=bias),
+            nn.BatchNorm1d(out_channels),
+            NON_LINEARITY[non_linear]
+        )
+    else:
+        return nn.Sequential(
+            create_conv1d_pad(in_channels, out_channels, kernel_size, stride=stride,
+                            padding='same', dilation=dilation, bias=bias),
+            nn.BatchNorm1d(out_channels)
+        )        
 
+
+def split(n, m):
+    min_times = 1
+    min_num = n // m - 1
+    min_counter = 0
+    result = []
+    for i in range(m-1):
+        result.append(min_num)
+        min_counter += 1
+        if min_counter == min_times:
+            min_counter = 0
+            min_num += 1
+            min_times += 1
+    result.append(n - sum(result))
+    return sorted(result)
 
 class MixNetBlock(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride, expand_ratio, non_linear='Mish', sq_ex=False, drop_connect_rate=0.1):
@@ -90,7 +112,7 @@ class MixNetBlock(nn.Module):
 
     def forward(self, x):
         if self.residual_connection:
-            return x + self._drop_connect(self.conv(x))
+            return x + self.conv(x)
         else:
             return self.conv(x)
 
@@ -112,11 +134,11 @@ def form_stage(in_channel, out_channel, start_kernel, stride, growth, non_linear
 class ASRModel(nn.Module):
     # [in_channels, out_channels, kernel_size, stride, growth_factor_for_inv_res, non_linear, squeeze_excite]
     filters = [9, 11, 13, 15, 17]
-    strides = [2, 1, 1, 1, 1]
+    strides = [1, 1, 1, 1, 1]
     growths = [1, 6, 6, 6, 6]
     squeeze_excites = [False, True, True, True, True]
-    repeats = [2, 2, 3, 3, 3]
-    non_linearities = ['ReLU', 'ReLU', 'Mish', 'Mish', 'Mish']
+    repeats = [2, 2, 2, 3, 3]
+    non_linearities = ['Mish', 'Mish', 'Mish', 'Mish', 'Mish']
     in_channels =  [24, 56, 152, 344, 568]
     out_channels = [56, 152, 344, 568, 568]
     mixnet_speech = []
@@ -132,16 +154,17 @@ class ASRModel(nn.Module):
                                         stride, growth, non_linearity, sq_ex, repeat))
         in_filter = out_channel
 
-    def __init__(self, input_features=80, num_classes=128, width_multiplier=1.0):
+    def __init__(self, input_features=80, num_classes=128, width_multiplier=1.6):
         super(ASRModel, self).__init__()
         config = self.mixnet_speech
         stem_channels = 24
         final_channels = 768
         dropout_rate = 0.1
+        num_heads = 8
 
         # depth multiplier
         stem_channels = _RoundChannels(stem_channels*width_multiplier)
-        self._stage_out_channels = _RoundChannels(final_channels * width_multiplier)
+        self._stage_out_channels = _RoundChannels(final_channels * width_multiplier, num_heads)
 
         for i, conf in enumerate(config):
             conf_ls = list(conf)
@@ -151,7 +174,7 @@ class ASRModel(nn.Module):
 
         # stem convolution
         self.stem_conv = Conv1x1Bn(
-            input_features, stem_channels, kernel_size=9, stride=2)
+            input_features, stem_channels, kernel_size=9, stride=3)
 
         # building MixNet blocks
         layers = []
@@ -166,24 +189,22 @@ class ASRModel(nn.Module):
             config[-1][1], self._stage_out_channels, kernel_size=27, non_linear='Mish', dilation=1)
         self.head_conv2 = Conv1x1Bn(
             self._stage_out_channels, self._stage_out_channels, non_linear='Mish')
+        decoder_layers = nn.TransformerEncoderLayer(self._stage_out_channels, num_heads, dim_feedforward=2048, dropout=0.1, activation='relu')
+        self.decoder = nn.TransformerEncoder(decoder_layers, num_layers=1)
+        self.pos_encoding = PositionalEncoding(self._stage_out_channels, max_len=3000, dropout=0.1)
         self.dropout = nn.Dropout(dropout_rate)
         self.classifier = nn.Conv1d(self._stage_out_channels, num_classes, 1, 1, bias=True)
-        decoder_layers = nn.TransformerEncoderLayer(self._stage_out_channels, 32, dim_feedforward=1024, dropout=0.1, activation='relu')
-        self.decoder = nn.TransformerEncoder(decoder_layers, num_layers=1)
-        self.pos_encoding = PositionalEncoding(self._stage_out_channels, max_len=750, dropout=0.1)
         self._initialize_weights()
 
     def forward(self, x):
-        x = self.stem_conv(x)
+        x = self.stem_conv(x) # bct
         x = self.layers(x)
         x = self.head_conv1(x)
         x = self.head_conv2(x)
-
         x = x.permute(2, 0, 1)
         x = self.pos_encoding(x)
         x = self.decoder(x)
         x = x.permute(1, 2, 0)
-
         x = self.dropout(x)
         x = self.classifier(x)
         return x
@@ -205,7 +226,8 @@ class ASRModel(nn.Module):
                     fan_in = m.weight.size(1)
                 init_range = 1.0 / math.sqrt(fan_in + fan_out)
                 m.weight.data.uniform_(-init_range, init_range)
-                m.bias.data.zero_()
+                if m.bias is not None:
+                    m.bias.data.zero_()
 
 
 if __name__ == '__main__':

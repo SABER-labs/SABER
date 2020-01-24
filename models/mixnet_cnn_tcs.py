@@ -7,116 +7,17 @@ from .conv1dlayers import MDConv1d, create_conv1d_pad, PositionalEncoding
 from .activations_jit import MishJit, SwishJit
 from .activations import HardSwish, HardSigmoid
 from .excite_layers import EfficientChannelAttention
-
-NON_LINEARITY = {
-    'ReLU': nn.ReLU6(inplace=True),
-    'Swish': HardSwish(inplace=True),
-    'Sigmoid': HardSigmoid(inplace=True),
-    'Mish': MishJit(inplace=True)
-}
-
-
-def _RoundChannels(c, divisor=8, min_value=None):
-    if min_value is None:
-        min_value = divisor
-    new_c = max(min_value, int(c + divisor / 2) // divisor * divisor)
-    if new_c < 0.9 * c:
-        new_c += divisor
-    return new_c
-
-
-def Conv1x1Bn(in_channels, out_channels, non_linear='Mish', kernel_size=1, dilation=1, stride=1, bias=False):
-    return nn.Sequential(
-        create_conv1d_pad(in_channels, out_channels, kernel_size, stride=stride,
-                          padding='same', dilation=dilation, bias=bias),
-        nn.BatchNorm1d(out_channels),
-        NON_LINEARITY[non_linear]
-    )
-
-
-class MixNetBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride, expand_ratio, non_linear='Mish', sq_ex=False, drop_connect_rate=0.1):
-        super(MixNetBlock, self).__init__()
-
-        expand = (expand_ratio != 1)
-        expand_channels = in_channels * expand_ratio
-        self.drop_connect_rate = drop_connect_rate
-        self.residual_connection = (
-            stride == 1 and in_channels == out_channels)
-
-        conv = []
-
-        if expand:
-            # expansion phase
-            pw_expansion = nn.Sequential(
-                nn.Conv1d(in_channels, expand_channels, 1, 1, 0, bias=False),
-                nn.BatchNorm1d(expand_channels),
-                NON_LINEARITY[non_linear]
-            )
-            conv.append(pw_expansion)
-
-        # depthwise convolution phase
-        dw = nn.Sequential(
-            MDConv1d(expand_channels, expand_channels, kernel_size, stride),
-            nn.BatchNorm1d(expand_channels),
-            NON_LINEARITY[non_linear]
-        )
-        conv.append(dw)
-
-        if sq_ex:
-            # squeeze and excite
-            squeeze_excite = nn.Sequential(
-                EfficientChannelAttention(expand_channels))
-            conv.append(squeeze_excite)
-
-        # projection phase
-        pw_projection = nn.Sequential(
-            nn.Conv1d(expand_channels, out_channels, 1, 1, 0, bias=False),
-            nn.BatchNorm1d(out_channels)
-        )
-        conv.append(pw_projection)
-
-        self.conv = nn.Sequential(*conv)
-
-    def _drop_connect(self, x):
-        if not self.training:
-            return x
-        keep_prob = 1.0 - self.drop_connect_rate
-        batch_size = x.size(0)
-        random_tensor = keep_prob
-        random_tensor += torch.rand(batch_size, 1, 1, device=x.device)
-        binary_tensor = random_tensor.floor()
-        return x.div(keep_prob) * binary_tensor
-
-    def forward(self, x):
-        if self.residual_connection:
-            return x + self._drop_connect(self.conv(x))
-        else:
-            return self.conv(x)
-
-
-def custom_range(start, num, inc):
-    return list(range(start, start + (num * inc), inc))
-
-
-def form_stage(in_channel, out_channel, start_kernel, stride, growth, non_linearity, sq_ex, repeats):
-    params = []
-    for i in range(repeats - 1):
-        params.append((in_channel, in_channel, custom_range(
-            start_kernel, 5, 2), 1, growth, non_linearity, sq_ex))
-    params.append((in_channel, out_channel, custom_range(
-        start_kernel, 5, 2), stride, growth, non_linearity, sq_ex))
-    return params
+from .mixnet import NON_LINEARITY, _RoundChannels, Conv1x1Bn, MixNetBlock, form_stage
 
 
 class ASRModel(nn.Module):
     # [in_channels, out_channels, kernel_size, stride, growth_factor_for_inv_res, non_linear, squeeze_excite]
     filters = [9, 11, 13, 15, 17]
-    strides = [2, 1, 2, 1, 1]
+    strides = [1, 1, 1, 1, 1]
     growths = [1, 6, 6, 6, 6]
     squeeze_excites = [False, True, True, True, True]
-    repeats = [2, 2, 3, 3, 3]
-    non_linearities = ['ReLU', 'ReLU', 'Mish', 'Mish', 'Mish']
+    repeats = [2, 3, 3, 4, 4]
+    non_linearities = ['Mish', 'Mish', 'Mish', 'Mish', 'Mish']
     in_channels =  [24, 56, 152, 344, 568]
     out_channels = [56, 152, 344, 568, 568]
     mixnet_speech = []
@@ -132,12 +33,12 @@ class ASRModel(nn.Module):
                                         stride, growth, non_linearity, sq_ex, repeat))
         in_filter = out_channel
 
-    def __init__(self, input_features=80, num_classes=128, width_multiplier=1.2):
+    def __init__(self, input_features=80, num_classes=128, width_multiplier=1.8):
         super(ASRModel, self).__init__()
         config = self.mixnet_speech
         stem_channels = 24
-        final_channels = 728
-        dropout_rate = 0.1
+        final_channels = 768
+        dropout_rate = 0.2
 
         # depth multiplier
         stem_channels = _RoundChannels(stem_channels*width_multiplier)
@@ -151,7 +52,7 @@ class ASRModel(nn.Module):
 
         # stem convolution
         self.stem_conv = Conv1x1Bn(
-            input_features, stem_channels, kernel_size=9, stride=2)
+            input_features, stem_channels, kernel_size=9, stride=3)
 
         # building MixNet blocks
         layers = []
@@ -171,7 +72,7 @@ class ASRModel(nn.Module):
         self._initialize_weights()
 
     def forward(self, x):
-        x = self.stem_conv(x)
+        x = self.stem_conv(x) # bct
         x = self.layers(x)
         x = self.head_conv1(x)
         x = self.head_conv2(x)
@@ -196,7 +97,8 @@ class ASRModel(nn.Module):
                     fan_in = m.weight.size(1)
                 init_range = 1.0 / math.sqrt(fan_in + fan_out)
                 m.weight.data.uniform_(-init_range, init_range)
-                m.bias.data.zero_()
+                if m.bias is not None:
+                    m.bias.data.zero_()
 
 
 if __name__ == '__main__':

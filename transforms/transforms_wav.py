@@ -8,6 +8,8 @@ import librosa
 import math
 import torch
 from torch.utils.data import Dataset
+from pyrubberband.pyrb import time_stretch
+from utils.config import min_audio_length_in_secs
 
 class LoadAudio(object):
     """Loads an audio into a numpy array."""
@@ -79,12 +81,13 @@ class ChangeSpeedAndPitchAudio(object):
 class StretchAudio(object):
     """Stretches an audio randomly."""
 
-    def __init__(self, max_scale=0.2):
+    def __init__(self, max_scale=[0.75, 1.75]):
         self.max_scale = max_scale
 
     def __call__(self, data):
-        scale = random.uniform(-self.max_scale, self.max_scale)
-        data['samples'] = librosa.effects.time_stretch(data['samples'], 1+scale)
+        sample_rate = data['sample_rate']
+        scale = random.uniform(*self.max_scale)
+        data['samples'] = time_stretch(data['samples'], sample_rate, scale)
         return data
 
 class TimeshiftAudio(object):

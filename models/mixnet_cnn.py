@@ -7,18 +7,17 @@ from .conv1dlayers import MDConv1d, create_conv1d_pad, PositionalEncoding
 from .activations_jit import MishJit, SwishJit
 from .activations import HardSwish, HardSigmoid
 from .excite_layers import EfficientChannelAttention
-from fairseq.modules.dynamic_convolution import DynamicConv1dTBC
 from .mixnet import NON_LINEARITY, _RoundChannels, Conv1x1Bn, MixNetBlock, form_stage
 
 
 class ASRModel(nn.Module):
     # [in_channels, out_channels, kernel_size, stride, growth_factor_for_inv_res, non_linear, squeeze_excite]
     filters = [9, 11, 13, 15, 17]
-    strides = [2, 1, 1, 1, 1]
+    strides = [1, 1, 1, 1, 1]
     growths = [1, 6, 6, 6, 6]
     squeeze_excites = [False, True, True, True, True]
-    repeats = [2, 2, 3, 3, 3]
-    non_linearities = ['ReLU', 'ReLU', 'Mish', 'Mish', 'Mish']
+    repeats = [3, 3, 3, 3, 3]
+    non_linearities = ['Mish', 'Mish', 'Mish', 'Mish', 'Mish']
     in_channels =  [24, 56, 152, 344, 568]
     out_channels = [56, 152, 344, 568, 568]
     mixnet_speech = []
@@ -39,7 +38,7 @@ class ASRModel(nn.Module):
         config = self.mixnet_speech
         stem_channels = 24
         final_channels = 768
-        dropout_rate = 0.1
+        dropout_rate = 0.0
 
         # depth multiplier
         stem_channels = _RoundChannels(stem_channels*width_multiplier)
@@ -64,20 +63,19 @@ class ASRModel(nn.Module):
         self.layers = nn.Sequential(*layers)
 
         # last several layers
-        self.head_conv = Conv1x1Bn(
-            config[-1][1], self._stage_out_channels, kernel_size=27, non_linear='Mish')
+        self.head_conv1 = Conv1x1Bn(
+            config[-1][1], self._stage_out_channels, kernel_size=27, non_linear='Mish', dilation=2)
+        self.head_conv2 = Conv1x1Bn(
+            self._stage_out_channels, self._stage_out_channels, non_linear='Mish')
         self.dropout = nn.Dropout(dropout_rate)
         self.classifier = nn.Conv1d(self._stage_out_channels, num_classes, 1, 1, bias=True)
-        self.decoder = DynamicConv1dTBC(self._stage_out_channels, kernel_size=27, num_heads=16, padding_l=0)
         self._initialize_weights()
 
     def forward(self, x):
         x = self.stem_conv(x) # bct
         x = self.layers(x)
-        x = self.head_conv(x)
-        x = x.permute(2, 0, 1) # from bct to tbc
-        x = self.decoder(x)
-        x = x.permute(1, 2, 0) # from tbc to bct
+        x = self.head_conv1(x)
+        x = self.head_conv2(x)
         x = self.dropout(x)
         x = self.classifier(x)
         return x

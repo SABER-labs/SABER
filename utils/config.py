@@ -12,6 +12,7 @@ sentencepiece_model = f'dataset_scripts/sp_librispeech_{vocab_size}.model'
 lmdb_root_path = f'lmdb-databases-librispeech_{vocab_size}'
 lmdb_commonvoice_root_path = f'lmdb-databases-common_voice_{vocab_size}'
 lmdb_airtel_root_path = f'lmdb-databases-airtel_{vocab_size}'
+lmdb_airtel_payments_root_path = f'lmdb-databases-airtel_payments_{vocab_size}'
 
 # Mel feature configs
 sampling_rate = 16000
@@ -34,9 +35,9 @@ num_cores = 10
 
 # Training configs
 gpu_id = '0,1,2'
-workers = 30
-train_batch_size = 24 * len(gpu_id.split(","))
-epochs = 300
+workers = 50
+train_batch_size = 16 * len(gpu_id.split(","))
+epochs = 500
 lr = 1e-3
 cyclic_lr_min = 1e-5
 lr_gamma = 0.1
@@ -45,9 +46,11 @@ checkpoint_root = f'checkpoints_saber_{vocab_size}'
 log_path = f"checkpoints_logs/exp-{checkpoint_root}"
 checkpoint_version = ''
 best_model_version = 'best_saber.pth'
+min_frac = 0.5
+max_frac = 0.9
 
 # UDA hyper-params
-augment_warmup_epoch = int(epochs * 0.25)
+augment_warmup_epoch = int(epochs * 0.15)
 unsupervision_warmup_epoch = int(epochs * 0.15)
 temperature_softmax = 0.4
 
@@ -57,8 +60,19 @@ max_sprinkles = 20
 
 # Spec augment hyper-params
 config_time_warp = 80
-config_freq_width = 20
-config_time_width = 20
+config_freq_width = 40
+config_time_width = 120
+
+# Common hyper-params
+min_spec_perc = 0.5
+max_spec_perc = 1.0
+
+# Beam search params
+alpha_lm = 1.6
+beta_lm = 0
+lm_model_path = "downloads/wiki_en_with_indian_payments.trie.klm"
+beam_width = 50
+cpus_for_beam_search = 30
 
 #Server configs
 host_ip = '0.0.0.0'

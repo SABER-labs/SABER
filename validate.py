@@ -1,15 +1,14 @@
-from utils.model_utils import get_most_probable
+from utils.model_utils import get_most_probable, get_most_probable_beam
 from datasets.librispeech import get_sentence
 
 from utils import config
 import os
 import torch
-from models.mixnet import ASRModel
-# from models.wav2letter import ASRModel
+from models.quartznet import ASRModel
 from utils.logger import logger
 from functools import partial
 from datasets.librispeech import allign_collate, align_collate_unlabelled, allign_collate_val
-from utils.lmdb import lmdbDataset, lmdbDoubleDataset
+from utils.lmdb import lmdbMultiDataset
 from utils.training_utils import save_checkpoint, BestMeter
 from utils.config import lmdb_root_path, workers, train_batch_size, unsupervision_warmup_epoch, log_path, epochs
 import ignite
@@ -25,7 +24,6 @@ from utils.loss_scaler import DynamicLossScaler
 from utils.aggloss import ACELoss, UDALoss, CustomCTCLoss, FocalACELoss, FocalUDALoss
 from utils.training_utils import load_checkpoint
 import numpy as np
-import toml
 
 torch.backends.cudnn.enabled = False
 torch.backends.cudnn.benchmark = True
@@ -56,8 +54,8 @@ def main():
     testCleanPath = os.path.join(lmdb_root_path, 'test-clean')
     testOtherPath = os.path.join(lmdb_root_path, 'test-other')
 
-    test_clean = lmdbDataset(root=testCleanPath)
-    test_other = lmdbDataset(root=testOtherPath)
+    test_clean = lmdbMultiDataset(roots=[testCleanPath])
+    test_other = lmdbMultiDataset(roots=[testOtherPath])
 
     logger.info(
         f'Loaded Test Datasets, test_clean={len(test_clean)} & test_other={len(test_other)} examples')
@@ -67,7 +65,7 @@ def main():
         img, labels, label_lengths = batch
         y_pred = model(img.to(device))
         if np.random.rand() > 0.99:
-            pred_sentences = get_most_probable(y_pred)
+            pred_sentences = get_most_probable_beam(y_pred)
             labels_list = labels.tolist()
             idx = 0
             for i, length in enumerate(label_lengths.cpu().tolist()):
@@ -83,9 +81,9 @@ def main():
     allign_collate_val_partial = partial(allign_collate_val, device=device)
 
     test_loader_clean = torch.utils.data.DataLoader(
-        test_clean, batch_size=train_batch_size, shuffle=False, num_workers=config.workers, pin_memory=False, collate_fn=allign_collate_val_partial)
+        test_clean, batch_size=1, shuffle=False, num_workers=config.workers, pin_memory=False, collate_fn=allign_collate_val_partial)
     test_loader_other = torch.utils.data.DataLoader(
-        test_other, batch_size=train_batch_size, shuffle=False, num_workers=config.workers, pin_memory=False, collate_fn=allign_collate_val_partial)
+        test_other, batch_size=1, shuffle=False, num_workers=config.workers, pin_memory=False, collate_fn=allign_collate_val_partial)
     evaluator_clean = Engine(validate_update_function)
     evaluator_other = Engine(validate_update_function)
     metrics = {'wer': WordErrorRate(), 'cer': CharacterErrorRate()}

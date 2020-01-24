@@ -7,30 +7,36 @@ from .config import temperature_softmax
 
 class ACELoss(nn.Module):
 
+    def __init__(self, label_smoothing=0.1):
+        super().__init__()
+        self.label_smoothing = label_smoothing
+
     def forward(self, logits, targets, input_lengths, target_lengths):
-        bs, class_size, T_ = logits.size()
+        logits = logits.permute(2, 0, 1)
+        T_, bs, class_size = logits.size()
         tagets_split = list(torch.split(targets, target_lengths.tolist()))
         targets_padded = torch.nn.utils.rnn.pad_sequence(
             tagets_split, batch_first=True, padding_value=0)
         targets_padded = F.one_hot(targets_padded.long(
         ), num_classes=class_size)  # batch, seq, class
+        targets_padded = targets_padded.mul(1.0 - self.label_smoothing) + (
+            1 - targets_padded).mul(self.label_smoothing / (class_size - 1))
         # sum across seq, to get batch * class
         targets_padded = torch.sum(targets_padded, 1).float().cuda()
         targets_padded[:, 0] = T_ - target_lengths
-        probs = torch.softmax(logits, dim=1)
-        probs = torch.sum(probs, 2)  # sum across seq, to get batch * class
+        probs = torch.softmax(logits, dim=2)  # softmax on class
+        probs = torch.sum(probs, 0)  # sum across seq, to get batch * class
         probs = probs/T_
         targets_padded = targets_padded/T_
-        return (-torch.sum(torch.log(probs)*targets_padded)) / bs
-        # return F.kl_div(torch.log(probs), targets_padded, reduction="batchmean")
-
-    def update_epoch(self, epoch):
-        self.epoch = epoch
+        loss1 =  -torch.sum(targets_padded * torch.log(probs)) / bs
+        # targets_padded = F.normalize(targets_padded, p=1, dim=1)
+        # loss2 = F.kl_div(torch.log(probs), targets_padded, reduction='batchmean')
+        return loss1
 
 
 class FocalACELoss(ACELoss):
 
-    def __init__(self, alpha=0.25, gamma=0.5):
+    def __init__(self, alpha=0.5, gamma=1.0):
         super().__init__()
         self.alpha = alpha
         self.gamma = gamma
@@ -48,9 +54,10 @@ class CustomCTCLoss(nn.Module):
         log_probs = log_probs.permute(2, 0, 1)
         return F.ctc_loss(log_probs, targets, input_lengths, target_lengths, zero_infinity=True)
 
+
 class CustomFocalCTCLoss(CustomCTCLoss):
 
-    def __init__(self, alpha=1.0, gamma=2.0):
+    def __init__(self, alpha=0.5, gamma=1.0):
         super().__init__()
         self.alpha = alpha
         self.gamma = gamma
@@ -59,6 +66,7 @@ class CustomFocalCTCLoss(CustomCTCLoss):
         loss = super().forward(probs, targets, input_lengths, target_lengths)
         p = torch.exp(-loss)
         return self.alpha * torch.pow((1-p), self.gamma) * loss
+
 
 class UDALoss(nn.Module):
 
@@ -71,6 +79,7 @@ class UDALoss(nn.Module):
         probs1 = probs1/T_
         probs2 = probs2/T_
         return F.kl_div(torch.log(probs2), probs1, reduction="batchmean")
+
 
 class FocalUDALoss(UDALoss):
 

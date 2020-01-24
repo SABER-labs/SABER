@@ -13,23 +13,13 @@ from joblib import Parallel, delayed
 from utils.config import num_cores, train_batch_size
 m.patch()
 
-def sort_libri_dataset(dataset):
-    logger.info('Begining to sort Dataset')
-    # lengths = []
-    # for i in range(len(dataset)):
-    #     lengths.append(dataset[i][0].shape[1])
-    # sorted_idx = np.argsort(lengths)
-    # dataset.files = np.array(dataset.files)[sorted_idx].tolist()
-    # dataset.targets = np.array(dataset.targets)[sorted_idx].tolist()
-
 def writeCache(env, cache):
     with env.begin(write=True) as txn:
         for k, value in cache.items():
             key = k.encode('ascii')
             txn.put(key, value)
 
-def createDataset_parallel(outputPath, dataset, img_transform=None, label_transform=None, exclude_func=None, n_jobs=num_cores):
-    sort_libri_dataset(dataset)
+def createDataset_parallel(outputPath, dataset, image_transform=None, label_transform=None, exclude_func=None, n_jobs=num_cores):
     nSamples = len(dataset)
     env = lmdb.open(outputPath, map_size=1099511627776)
     logger.info(f'Begining to create dataset at {outputPath}')
@@ -39,7 +29,7 @@ def createDataset_parallel(outputPath, dataset, img_transform=None, label_transf
     with Parallel(n_jobs=n_jobs, require='sharedmem') as parallel:
         while done < nSamples - ignored:
             num_left_or_batch_size = min(100, nSamples - done)
-            parallel(delayed(fillCache)(done + i, dataset, cache, img_transform=img_transform, label_transform=label_transform, exclude_func=exclude_func) for i in range(num_left_or_batch_size))
+            parallel(delayed(fillCache)(done + i, dataset, cache, image_transform=image_transform, label_transform=label_transform, exclude_func=exclude_func) for i in range(num_left_or_batch_size))
             writeCache(env, cache)
             done_batch_size = len(cache.items())
             done += done_batch_size
@@ -51,20 +41,19 @@ def createDataset_parallel(outputPath, dataset, img_transform=None, label_transf
     writeCache(env, cache)
     logger.info(f'Created dataset with {nSamples:d} samples')
 
-def fillCache(index, dataset, cache, img_transform=None, label_transform=None, exclude_func=None):
+def fillCache(index, dataset, cache, image_transform=None, label_transform=None, exclude_func=None):
     img, label = dataset[index]
     dataKey = f'data-{index:09d}'
     if exclude_func is not None:
         if exclude_func(img, label):
             return
-    if img_transform is not None:
-        img = img_transform(img)
+    if image_transform is not None:
+        img = image_transform(img)
     if label_transform is not None:
         label_transformed = label_transform(label)
     cache[dataKey] = msgpack.packb({'img': img, 'label': label_transformed}, default=m.encode, use_bin_type=True)
     
-def createDataset_single(outputPath, dataset, img_transform=None, label_transform=None, exclude_func=None):
-    sort_libri_dataset(dataset)
+def createDataset_single(outputPath, dataset, image_transform=None, label_transform=None, exclude_func=None):
     nSamples = len(dataset)
     env = lmdb.open(outputPath, map_size=1099511627776)
     logger.info(f'Begining to create dataset at {outputPath}')
@@ -75,8 +64,8 @@ def createDataset_single(outputPath, dataset, img_transform=None, label_transfor
         if exclude_func is not None:
             if exclude_func(img, label):
                 continue
-        if img_transform is not None:
-            img = img_transform(img)
+        if image_transform is not None:
+            img = image_transform(img)
         if label_transform is not None:
             label_transformed = label_transform(label)
         cache[dataKey] = msgpack.packb({'img': img, 'label': label_transformed}, default=m.encode, use_bin_type=True)
@@ -99,7 +88,7 @@ class lmdbMultiDataset(Dataset):
         for i, root in enumerate(roots):
             setattr(self, f'env{i}', lmdb.open(
                 root,
-                max_readers=1,
+                max_readers=100,
                 readonly=True,
                 lock=False,
                 readahead=False,
@@ -111,13 +100,13 @@ class lmdbMultiDataset(Dataset):
 
         self.transform = transform
         self.target_transform = target_transform
-        self.epochs = 0
+        self.epoch = 0
 
     def __len__(self):
         return self.nSamples
 
     def set_epochs(self, epoch):
-        self.epochs = epoch
+        self.epoch = epoch
 
     def __getitem__(self, index):
         assert index <= len(self), 'index range error'
@@ -135,12 +124,12 @@ class lmdbMultiDataset(Dataset):
             label = data['label']
 
             if self.transform is not None:
-                img = self.transform(img)
+                img = self.transform(img, self.epoch)
 
             if self.target_transform is not None:
                 label = self.target_transform(label)
 
-            return (img, label, self.epochs)
+            return (img, label)
 
 if __name__ == "__main__":
     from utils.config import lmdb_root_path
@@ -152,6 +141,5 @@ if __name__ == "__main__":
     trainCommonVoicePath = os.path.join(lmdb_commonvoice_root_path, 'train-labelled-en')
     testAirtelPath = os.path.join(lmdb_airtel_root_path, 'test-labelled-en')
     roots = [trainCleanPath, trainOtherPath, trainCommonVoicePath]
-    # dataset = lmdbMultiDataset(roots=roots)
     dataset = lmdbMultiDataset(roots=[testAirtelPath])
     print(sequence_to_string(dataset[np.random.choice(len(dataset))][1].tolist()))

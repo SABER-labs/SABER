@@ -5,7 +5,7 @@ import numpy as np
 import librosa
 import torch
 from torch.utils.data import Dataset
-from utils.config import augment_warmup_epoch, max_sprinkles_percent, max_sprinkles, ref_db, max_db, n_fft, hop_length, window_length, config_time_warp, config_freq_width, config_time_width
+from utils.config import augment_warmup_epoch, max_sprinkles_percent, max_sprinkles, ref_db, max_db, n_fft, hop_length, window_length, config_time_warp, config_freq_width, config_time_width, min_spec_perc, max_spec_perc
 from .spec_augment_utils import spec_augment, cutout
 from imgaug import augmenters as iaa
 from torchvision import transforms
@@ -35,16 +35,16 @@ class ToSTFT(object):
 class StretchAudioOnSTFT(object):
     """Stretches an audio on the frequency domain."""
 
-    def __init__(self, max_scale=0.2):
+    def __init__(self, max_scale=[0.75, 1.75]):
         self.max_scale = max_scale
 
     def __call__(self, data):
         stft = data['stft']
         sample_rate = data['sample_rate']
         hop_length = data['hop_length']
-        scale = random.uniform(-self.max_scale, self.max_scale)
+        scale = random.uniform(*self.max_scale)
         stft_stretch = librosa.core.phase_vocoder(
-            stft, 1+scale, hop_length=hop_length)
+            stft, scale, hop_length=hop_length)
         data['stft'] = stft_stretch
         return data
 
@@ -87,10 +87,12 @@ class SpecAugmentOnMel(object):
 
     def __init__(self, no_time_wrap=False):
         self.no_time_wrap = no_time_wrap
+        self.perc_array = np.linspace(min_spec_perc, max_spec_perc, augment_warmup_epoch)
 
     def __call__(self, data):
         tensor = data['mel_spectrogram'].astype(np.float32)
-        percentage = np.clip(data['epoch'] / augment_warmup_epoch, 0.15, 1)
+        epoch_index = min(data['epoch'], augment_warmup_epoch-1)
+        percentage = self.perc_array[epoch_index]
         max_time_warp = max(1, int(percentage * config_time_warp))
         max_freq_width = max(1, int(percentage * config_freq_width))
         max_time_width = max(1, int(percentage * config_time_width))
@@ -102,14 +104,19 @@ class SpecAugmentOnMel(object):
 
 class SpecSprinkleOnMel(object):
 
+    def __init__(self, type="mel_spectrogram"):
+        self.perc_array = np.linspace(min_spec_perc, max_spec_perc, augment_warmup_epoch)
+        self.type = type
+
     def __call__(self, data):
-        tensor = data['mel_spectrogram'].astype(np.float32)
-        warmup_percen = np.clip(data['epoch'] / augment_warmup_epoch, 0.15, 1)
+        tensor = data[self.type].astype(np.float32)
+        epoch_index = min(data['epoch'], augment_warmup_epoch-1)
+        warmup_percen = self.perc_array[epoch_index]
         percentage = warmup_percen * max_sprinkles_percent
         max_sprinkles_cuts = max(2, int(warmup_percen * max_sprinkles))
         num_cuts = np.random.randint(1, max_sprinkles_cuts)
         tensor = cutout(tensor, percentage, num_cuts)
-        data['mel_spectrogram'] = tensor
+        data[self.type] = tensor
         return data
 
 class SpecBlurring(object):
@@ -135,8 +142,8 @@ class SpecNoise(object):
     def __call__(self, data):
         tensor = data[self.type].astype(np.float32)
         tensor = tensor[:, :, np.newaxis]
-        additive_guasian = iaa.AdditiveGaussianNoise(scale=(0.0, 0.02)).augment_image
-        additive_laplacian = iaa.AdditiveLaplaceNoise(scale=(0.0, 0.02)).augment_image
+        additive_guasian = iaa.AdditiveGaussianNoise(scale=(0.01, 0.04)).augment_image
+        additive_laplacian = iaa.AdditiveLaplaceNoise(scale=(0.01, 0.04)).augment_image
         dropout = iaa.Dropout(p=(0.0, 0.1)).augment_image
         random_blur = transforms.RandomChoice([additive_guasian, additive_laplacian, dropout])
         data[self.type] = random_blur(tensor).squeeze(2)

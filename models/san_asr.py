@@ -27,16 +27,16 @@ class ASRModel(nn.Module):
 
     def __init__(self, input_features=80, num_classes=128):
         super().__init__()
-        self.downsampler = nn.AvgPool1d(8, 8)
-        dhead = 512
+        dhead = 768
         dff = 2048
         nheads = 8
         num_layers = 10
-        self.pos_encoder = PositionalEncoding(dhead, max_len=750, dropout=0.1)
+        pool_size = 3
+        self.downsampler = nn.AvgPool1d(pool_size, pool_size)
+        self.pos_encoder = PositionalEncoding(dhead, max_len=5000 // pool_size, dropout=0.0)
         self.embedder = Conv1x1Bn(input_features, dhead, non_linear='Mish')
-        encoder_layers = nn.TransformerEncoderLayer(dhead, nheads, dff, activation='relu')
+        encoder_layers = nn.TransformerEncoderLayer(dhead, nheads, dff, activation='relu', dropout=0.0)
         self.san_layers = nn.TransformerEncoder(encoder_layers, num_layers)
-        self.dropout = nn.Dropout(0.2)
         self.point_wise_proj = nn.Conv1d(dhead, num_classes, 1, 1, bias=True)
 
     def forward(self, x):
@@ -46,7 +46,6 @@ class ASRModel(nn.Module):
         x = self.pos_encoder(x)
         x = self.san_layers(x)
         x = x.permute(1, 2, 0)
-        x = self.dropout(x)
         x = self.point_wise_proj(x)
         return x
 

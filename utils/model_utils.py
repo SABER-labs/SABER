@@ -1,31 +1,22 @@
-from datasets.librispeech import sequence_to_string, get_sentence
+from datasets.librispeech import sequence_to_string, get_sentence, get_vocab_list
 import torch.nn as nn
 import torch
+from utils.config import alpha_lm, beta_lm, lm_model_path, beam_width, cpus_for_beam_search, sentencepiece_model
+# from ctc_decoders import ctc_beam_search_decoder_batch, Scorer
+import os
+
+# import pdb; pdb.set_trace()
+# scorer = Scorer(alpha_lm, beta_lm, lm_model_path, sentencepiece_model, get_vocab_list())
 
 def get_most_probable(tensor):
     values, preds_idx = tensor.max(1)
     sentences = [get_sentence(seq) for seq in preds_idx.tolist()]
     return sentences
 
-def ctc_greedy_decoder_topk(probs, blank=0):
-    top_kprobs, top_kindexes = torch.topk(torch.softmax(probs.permute(1, 0), dim=1), k=2, dim=1)
-    letter_miss_cond = (top_kprobs[:, 0] - top_kprobs[:, 1]) < 0.1
-    is_index_zero = top_kindexes[:, 0] == 0
-    confusion = ((letter_miss_cond) & is_index_zero).type(torch.long)
-
-    max_indexes = top_kindexes[torch.arange(top_kindexes.shape[0]), confusion]
-    max_probs = top_kprobs[:, 0]
-    mask = torch.cat([
-        torch.tensor([1], dtype=torch.bool, device=probs.device),
-        ((max_indexes[:-1] - max_indexes[1:]).abs() > 0)
-    ])
-    mask = mask * (max_indexes != blank)
-    return max_probs[mask].mean(), max_indexes[mask]
-
-def get_most_probable_topk(tensor):
-    values, preds_idx = ctc_greedy_decoder_topk(tensor[0])
-    sentences = sequence_to_string(preds_idx.tolist())
-    return sentences
+# def get_most_probable_beam(tensor):
+#     probs_list = tensor.permute(0, 2, 1).cpu().tolist()
+#     res = ctc_beam_search_decoder_batch(probs_list, get_vocab_list(), beam_size=beam_width, num_processes=cpus_for_beam_search, ext_scoring_func=scorer)
+#     return [re[0][0] for re in res]
 
 def get_model_size(model):
     return sum(p.numel() for p in model.parameters())/1000000.0

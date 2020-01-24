@@ -1,6 +1,6 @@
 from audtorch import datasets, transforms
 from utils.config import max_audio_length_in_secs, sampling_rate, max_label_length, min_audio_length_in_secs, lmdb_airtel_root_path
-from utils.lmdb import createDataset_single as createDataset
+from utils.lmdb import createDataset_parallel as createDataset
 from utils.logger import logger
 from datasets.librispeech import convert_to_mel, label_transform
 import os

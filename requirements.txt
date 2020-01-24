@@ -19,3 +19,7 @@ nemo-nlp
 torch-lr-finder
 torchviz
 fairseq
+pyrubberband
+torchaudio
+aubio
+torchnlp
