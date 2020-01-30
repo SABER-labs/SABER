@@ -147,7 +147,7 @@ class MDConv1d(nn.Module):
         in_splits = _split_channels(in_channels, num_groups)
         out_splits = _split_channels(out_channels, num_groups)
         for idx, (k, in_ch, out_ch) in enumerate(zip(kernel_size, in_splits, out_splits)):
-            conv_groups = out_ch if depthwise else 1
+            conv_groups = in_ch if depthwise else 1
             # use add_module to keep key space clean
             self.add_module(
                 str(idx),

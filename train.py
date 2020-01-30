@@ -4,7 +4,7 @@ from datasets.librispeech import get_sentence
 from utils import config
 import os
 import torch
-from models.mixnet_cnn import ASRModel
+from models.quartznet import ASRModel
 from utils.logger import logger
 from functools import partial
 from datasets.librispeech import allign_collate, image_train_transform, image_val_transform
@@ -22,7 +22,6 @@ from utils.optimizers import RAdam, NovoGrad, Ranger
 from utils.aggloss import ACELoss, UDALoss, CustomCTCLoss, FocalACELoss, FocalUDALoss, CustomFocalCTCLoss
 from utils.training_utils import load_checkpoint
 import numpy as np
-import toml
 np.random.bit_generator = np.random._bit_generator
 
 torch.backends.cudnn.enabled = False
@@ -55,7 +54,7 @@ def main():
     optimizer = Ranger(model.parameters(), lr=config.lr, eps=1e-5)
     load_checkpoint(model, optimizer, params)
     start_epoch = params['start_epoch']
-    sup_criterion = CustomFocalCTCLoss()
+    sup_criterion = CustomCTCLoss()
     unsup_criterion = UDALoss()
     tb_logger = TensorboardLogger(log_dir=log_path)
     pbar = ProgressBar(persist=True, desc="Training")
@@ -65,6 +64,8 @@ def main():
     pbar_valid_airtel_payments = ProgressBar(persist=True, desc="Validation Airtel Payments")
     timer = Timer(average=True)
     best_meter = params.get('best_stats', BestMeter())
+
+    logger.info('Begining to load Datasets')
 
     trainCleanPath = os.path.join(lmdb_root_path, 'train-labelled')
     trainOtherPath = os.path.join(lmdb_root_path, 'train-unlabelled')
@@ -96,29 +97,28 @@ def main():
         # Supervised gt, pred
         imgs_sup, labels_sup, label_lengths = next(
             engine.state.train_loader_labbeled)
+
         imgs_sup = imgs_sup.to(device)
         labels_sup = labels_sup.to(device)
         probs_sup = model(imgs_sup)
-
+        
         # Unsupervised gt, pred
         # imgs_unsup, augmented_imgs_unsup = next(engine.state.train_loader_unlabbeled)
         # with torch.no_grad():
         #     probs_unsup = model(imgs_unsup.to(device))
         # probs_aug_unsup = model(augmented_imgs_unsup.to(device))
-
-        sup_loss = sup_criterion(probs_sup, labels_sup.to(torch.int32), torch.tensor(
-            [probs_sup.size(2)]*probs_sup.size(0), dtype=torch.int32), label_lengths.to(torch.int32))
+        sup_loss = sup_criterion(probs_sup, labels_sup, label_lengths)
         # unsup_loss = unsup_criterion(probs_unsup, probs_aug_unsup)
 
         # Blend supervised and unsupervised losses till unsupervision_warmup_epoch
         # alpha = get_alpha(engine.state.epoch)
         # final_loss = ((1 - alpha) * sup_loss) + (alpha * unsup_loss)
 
-        final_loss = sup_loss
-        final_loss.backward()
+        # final_loss = sup_loss
+        sup_loss.backward()
         optimizer.step()
 
-        return final_loss.item()
+        return sup_loss.item()
 
     @torch.no_grad()
     def validate_update_function(engine, batch):

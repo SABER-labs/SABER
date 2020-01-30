@@ -1,40 +1,37 @@
+import argparse
 from utils.model_utils import get_most_probable, get_model_size
 from datasets.librispeech import get_sentence
 
 from utils import config
 import os
 import torch
-from models.mixnet_cnn import ASRModel
+from torch.nn.parallel import DistributedDataParallel
+from models.quartznet import ASRModel
 from utils.logger import logger
 from functools import partial
-from datasets.librispeech import allign_collate, align_collate_unlabelled, allign_collate_val
+from datasets.librispeech import allign_collate, image_train_transform, image_val_transform
 from utils.lmdb import lmdbMultiDataset
 from utils.training_utils import save_checkpoint, BestMeter
 from utils.config import lmdb_root_path, workers, train_batch_size, unsupervision_warmup_epoch, log_path, epochs, lmdb_commonvoice_root_path, lmdb_airtel_root_path, lmdb_airtel_payments_root_path
 import ignite
 from ignite.engine import Events, Engine
-from ignite.metrics import Loss, RunningAverage
+from ignite.metrics import Loss
 from utils.metrics import WordErrorRate, CharacterErrorRate
 from ignite.handlers import ModelCheckpoint, Timer
 from ignite.contrib.handlers.tensorboard_logger import *
 from ignite.contrib.handlers.tqdm_logger import ProgressBar
 from utils.optimizers import RAdam, NovoGrad, Ranger
-from utils.cyclicLR import CyclicCosAnnealingLR
-from utils.loss_scaler import DynamicLossScaler
 from utils.aggloss import ACELoss, UDALoss, CustomCTCLoss, FocalACELoss, FocalUDALoss, CustomFocalCTCLoss
 from utils.training_utils import load_checkpoint
 import numpy as np
-import argparse
-from apex import amp
-from apex.parallel import DistributedDataParallel
+np.random.bit_generator = np.random._bit_generator
 
 def get_alpha(epoch):
     return np.clip(epoch / unsupervision_warmup_epoch, 0.0, 0.5)
 
-def init_parms():
-    # os.environ['CUDA_VISIBLE_DEVICES'] = os.environ.get(
-    #     'CUDA_VISIBLE_DEVICES', config.gpu_id)
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+def init_parms(local_rank):
+    device = f'cuda:{local_rank}' if torch.cuda.is_available() else 'cpu'
     params = {
         'device': device,
         'start_epoch': -1
@@ -42,18 +39,19 @@ def init_parms():
     return params
 
 
-def main():
-    params = init_parms()
+def main(local_rank):
+    params = init_parms(local_rank)
     device = params.get('device')
     model = ASRModel(input_features=config.num_mel_banks,
                      num_classes=config.vocab_size).to(device)
-    logger.info(f'Model initialized with {get_model_size(model):.3f}M parameters')
-    optimizer = Ranger(model.parameters(), lr=config.lr, eps=1e-8)
+    logger.info(
+        f'Model initialized with {get_model_size(model):.3f}M parameters')
+    model = DistributedDataParallel(model, device_ids=[local_rank], output_device=local_rank)
+    optimizer = Ranger(model.parameters(), lr=config.lr, eps=1e-5)
     load_checkpoint(model, optimizer, params)
-    model, optimizer = amp.initialize(model, optimizer, opt_level="O0")
-    model = DistributedDataParallel(model)
+    print(f"Loaded model on {local_rank}")
     start_epoch = params['start_epoch']
-    sup_criterion = CustomFocalCTCLoss()
+    sup_criterion = CustomCTCLoss()
     unsup_criterion = UDALoss()
     if args.local_rank == 0:
         tb_logger = TensorboardLogger(log_dir=log_path)
@@ -61,7 +59,8 @@ def main():
         pbar_valid = ProgressBar(persist=True, desc="Validation Clean")
         pbar_valid_other = ProgressBar(persist=True, desc="Validation Other")
         pbar_valid_airtel = ProgressBar(persist=True, desc="Validation Airtel")
-        pbar_valid_airtel_payments = ProgressBar(persist=True, desc="Validation Airtel Payments")
+        pbar_valid_airtel_payments = ProgressBar(
+            persist=True, desc="Validation Airtel Payments")
         timer = Timer(average=True)
         best_meter = params.get('best_stats', BestMeter())
 
@@ -70,32 +69,33 @@ def main():
     trainCommonVoicePath = os.path.join(
         lmdb_commonvoice_root_path, 'train-labelled-en')
     trainAirtelPath = os.path.join(lmdb_airtel_root_path, 'train-labelled-en')
-    trainAirtelPaymentsPath = os.path.join(lmdb_airtel_payments_root_path, 'train-labelled-en')
+    trainAirtelPaymentsPath = os.path.join(
+        lmdb_airtel_payments_root_path, 'train-labelled-en')
     testCleanPath = os.path.join(lmdb_root_path, 'test-clean')
     testOtherPath = os.path.join(lmdb_root_path, 'test-other')
     testAirtelPath = os.path.join(lmdb_airtel_root_path, 'test-labelled-en')
-    testAirtelPaymentsPath = os.path.join(lmdb_airtel_payments_root_path, 'test-labelled-en')
+    testAirtelPaymentsPath = os.path.join(
+        lmdb_airtel_payments_root_path, 'test-labelled-en')
     devOtherPath = os.path.join(lmdb_root_path, 'dev-other')
 
     train_clean = lmdbMultiDataset(
-        roots=[trainCleanPath, trainOtherPath, trainCommonVoicePath, trainAirtelPath, trainAirtelPaymentsPath])
-    train_other = lmdbMultiDataset(roots=[devOtherPath])
+        roots=[trainCleanPath, trainOtherPath, trainCommonVoicePath, trainAirtelPath, trainAirtelPaymentsPath], transform=image_train_transform)
+    train_other = lmdbMultiDataset(roots=[devOtherPath], transform=image_train_transform)
 
-    test_clean = lmdbMultiDataset(roots=[testCleanPath])
-    test_other = lmdbMultiDataset(roots=[testOtherPath])
-    test_airtel = lmdbMultiDataset(roots=[testAirtelPath])
-    test_payments_airtel = lmdbMultiDataset(roots=[testAirtelPaymentsPath])
+    test_clean = lmdbMultiDataset(roots=[testCleanPath], transform=image_val_transform)
+    test_other = lmdbMultiDataset(roots=[testOtherPath], transform=image_val_transform)
+    test_airtel = lmdbMultiDataset(roots=[testAirtelPath], transform=image_val_transform)
+    test_payments_airtel = lmdbMultiDataset(roots=[testAirtelPaymentsPath], transform=image_val_transform)
 
     logger.info(
         f'Loaded Train & Test Datasets, train_labbeled={len(train_clean)}, train_unlabbeled={len(train_other)}, test_clean={len(test_clean)}, test_other={len(test_other)}, test_airtel={len(test_airtel)}, test_payments_airtel={len(test_payments_airtel)} examples')
 
     def train_update_function(engine, _):
         optimizer.zero_grad()
-
         # Supervised gt, pred
         imgs_sup, labels_sup, label_lengths = next(
             engine.state.train_loader_labbeled)
-        imgs_sup = imgs_sup.to(device)
+        imgs_sup = imgs_sup.cuda(local_rank, non_blocking=True)
         labels_sup = labels_sup
         probs_sup = model(imgs_sup)
 
@@ -105,25 +105,23 @@ def main():
         #     probs_unsup = model(imgs_unsup.to(device))
         # probs_aug_unsup = model(augmented_imgs_unsup.to(device))
 
-        sup_loss = sup_criterion(probs_sup, labels_sup.to(torch.int32), torch.tensor(
-            [probs_sup.size(2)]*probs_sup.size(0), dtype=torch.int32), label_lengths.to(torch.int32))
+        sup_loss = sup_criterion(probs_sup, labels_sup, label_lengths)
         # unsup_loss = unsup_criterion(probs_unsup, probs_aug_unsup)
 
         # Blend supervised and unsupervised losses till unsupervision_warmup_epoch
         # alpha = get_alpha(engine.state.epoch)
         # final_loss = ((1 - alpha) * sup_loss) + (alpha * unsup_loss)
 
-        final_loss = sup_loss
-        with amp.scale_loss(final_loss, optimizer) as scaled_loss:
-            scaled_loss.backward()
+        # final_loss = sup_loss
+        sup_loss.backward()
         optimizer.step()
 
-        return final_loss.item()
+        return sup_loss.item()
 
     @torch.no_grad()
     def validate_update_function(engine, batch):
         img, labels, label_lengths = batch
-        y_pred = model(img.to(device))
+        y_pred = model(img.cuda(local_rank, non_blocking=True))
         if np.random.rand() > 0.99:
             pred_sentences = get_most_probable(y_pred)
             labels_list = labels.tolist()
@@ -135,37 +133,38 @@ def main():
                 print(f"Pred sentence: {pred_sentence}, GT: {gt_sentence}")
         return (y_pred, labels, label_lengths)
 
-    allign_collate_partial = partial(allign_collate, device=device)
-    align_collate_unlabelled_partial = partial(
-        align_collate_unlabelled, device=device)
-    allign_collate_val_partial = partial(allign_collate_val, device=device)
-
-    train_sampler_labbeled = torch.utils.data.distributed.DistributedSampler(train_clean, num_replicas=3, rank=args.local_rank)
-    train_sampler_unlabbeled = torch.utils.data.distributed.DistributedSampler(train_other, num_replicas=3, rank=args.local_rank)
-    test_sampler_clean = torch.utils.data.distributed.DistributedSampler(test_clean, num_replicas=3, rank=args.local_rank)
-    test_sampler_other = torch.utils.data.distributed.DistributedSampler(test_other, num_replicas=3, rank=args.local_rank)
-    test_sampler_airtel = torch.utils.data.distributed.DistributedSampler(test_airtel, num_replicas=3, rank=args.local_rank)
-    test_sampler_airtel_payments = torch.utils.data.distributed.DistributedSampler(test_payments_airtel, num_replicas=3, rank=args.local_rank)
+    train_sampler_labbeled = torch.utils.data.distributed.DistributedSampler(
+        train_clean, num_replicas=3, rank=args.local_rank)
+    train_sampler_unlabbeled = torch.utils.data.distributed.DistributedSampler(
+        train_other, num_replicas=3, rank=args.local_rank)
+    test_sampler_clean = torch.utils.data.distributed.DistributedSampler(
+        test_clean, num_replicas=3, rank=args.local_rank)
+    test_sampler_other = torch.utils.data.distributed.DistributedSampler(
+        test_other, num_replicas=3, rank=args.local_rank)
+    test_sampler_airtel = torch.utils.data.distributed.DistributedSampler(
+        test_airtel, num_replicas=3, rank=args.local_rank)
+    test_sampler_airtel_payments = torch.utils.data.distributed.DistributedSampler(
+        test_payments_airtel, num_replicas=3, rank=args.local_rank)
 
     train_loader_labbeled_loader = torch.utils.data.DataLoader(
-        train_clean, batch_size=train_batch_size // 3, sampler=train_sampler_labbeled, num_workers=config.workers, pin_memory=False, collate_fn=allign_collate_partial)
+        train_clean, batch_size=train_batch_size // 3, sampler=train_sampler_labbeled, num_workers=config.workers // 3, pin_memory=True, collate_fn=allign_collate)
     train_loader_unlabbeled_loader = torch.utils.data.DataLoader(
-        train_other, batch_size=train_batch_size * 4, sampler=train_sampler_unlabbeled, num_workers=config.workers, pin_memory=False, collate_fn=align_collate_unlabelled_partial)
+        train_other, batch_size=train_batch_size * 4, sampler=train_sampler_unlabbeled, num_workers=config.workers // 3, pin_memory=True, collate_fn=allign_collate)
     test_loader_clean = torch.utils.data.DataLoader(
-        test_clean, batch_size=train_batch_size // 3, sampler=test_sampler_clean, num_workers=config.workers, pin_memory=False, collate_fn=allign_collate_val_partial)
+        test_clean, batch_size=1, sampler=test_sampler_clean, num_workers=config.workers // 3, pin_memory=True, collate_fn=allign_collate)
     test_loader_other = torch.utils.data.DataLoader(
-        test_other, batch_size=train_batch_size // 3, sampler=test_sampler_other, num_workers=config.workers, pin_memory=False, collate_fn=allign_collate_val_partial)
+        test_other, batch_size=1, sampler=test_sampler_other, num_workers=config.workers // 3, pin_memory=True, collate_fn=allign_collate)
     test_loader_airtel = torch.utils.data.DataLoader(
-        test_airtel, batch_size=train_batch_size // 3, sampler=test_sampler_airtel, num_workers=config.workers, pin_memory=False, collate_fn=allign_collate_val_partial)
+        test_airtel, batch_size=1, sampler=test_sampler_airtel, num_workers=config.workers // 3, pin_memory=True, collate_fn=allign_collate)
     test_loader_airtel_payments = torch.utils.data.DataLoader(
-        test_payments_airtel, batch_size=train_batch_size // 3, sampler=test_sampler_airtel_payments, num_workers=config.workers, pin_memory=False, collate_fn=allign_collate_val_partial)
+        test_payments_airtel, batch_size=1, sampler=test_sampler_airtel_payments, num_workers=config.workers // 3, pin_memory=True, collate_fn=allign_collate)
     trainer = Engine(train_update_function)
+    iteration_log_step = int(0.33 * len(train_loader_labbeled_loader))
     evaluator_clean = Engine(validate_update_function)
     evaluator_other = Engine(validate_update_function)
     evaluator_airtel = Engine(validate_update_function)
     evaluator_airtel_payments = Engine(validate_update_function)
     metrics = {'wer': WordErrorRate(), 'cer': CharacterErrorRate()}
-    iteration_log_step = int(0.33 * len(train_loader_labbeled_loader))
     for name, metric in metrics.items():
         metric.attach(evaluator_clean, name)
         metric.attach(evaluator_other, name)
@@ -174,54 +173,49 @@ def main():
 
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=config.lr_gamma, patience=int(
         config.epochs * 0.05), verbose=True, threshold_mode="abs", cooldown=int(config.epochs * 0.025), min_lr=1e-5)
-    # scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=config.lr_decay_step, gamma=config.lr_gamma, last_epoch=start_epoch)
-    # scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, 1e-2, total_steps=config.epochs * len(train_loader_labbeled_loader),
-    #                        div_factor=25, final_div_factor=1e3, pct_start=0.05, last_epoch=-1)
-    # scheduler = CyclicCosAnnealingLR(
-    #     optimizer, epoch_length=config.epochs * len(train_loader_labbeled_loader), eta_min=config.cyclic_lr_min, last_epoch=start_epoch*len(train_loader_labbeled_loader))
     if args.local_rank == 0:
         tb_logger.attach(trainer, log_handler=OutputHandler(tag="training", output_transform=lambda loss: {'loss': loss}),
-                        event_name=Events.ITERATION_COMPLETED)
+                         event_name=Events.ITERATION_COMPLETED)
         tb_logger.attach(trainer,
-                        log_handler=OptimizerParamsHandler(optimizer),
-                        event_name=Events.ITERATION_STARTED)
+                         log_handler=OptimizerParamsHandler(optimizer),
+                         event_name=Events.ITERATION_STARTED)
         tb_logger.attach(trainer,
-                        log_handler=WeightsHistHandler(model),
-                        event_name=Events.EPOCH_COMPLETED)
+                         log_handler=WeightsHistHandler(model),
+                         event_name=Events.EPOCH_COMPLETED)
         tb_logger.attach(trainer,
-                        log_handler=WeightsScalarHandler(model),
-                        event_name=Events.ITERATION_COMPLETED)
+                         log_handler=WeightsScalarHandler(model),
+                         event_name=Events.ITERATION_COMPLETED)
         tb_logger.attach(trainer,
-                        log_handler=GradsScalarHandler(model),
-                        event_name=Events.ITERATION_COMPLETED)
+                         log_handler=GradsScalarHandler(model),
+                         event_name=Events.ITERATION_COMPLETED)
         tb_logger.attach(trainer,
-                        log_handler=GradsHistHandler(model),
-                        event_name=Events.EPOCH_COMPLETED)
+                         log_handler=GradsHistHandler(model),
+                         event_name=Events.EPOCH_COMPLETED)
         tb_logger.attach(evaluator_clean,
-                        log_handler=OutputHandler(tag="validation_clean", metric_names=[
-                                                "wer", "cer"], another_engine=trainer),
-                        event_name=Events.EPOCH_COMPLETED)
+                         log_handler=OutputHandler(tag="validation_clean", metric_names=[
+                             "wer", "cer"], another_engine=trainer),
+                         event_name=Events.EPOCH_COMPLETED)
         tb_logger.attach(evaluator_other,
-                        log_handler=OutputHandler(tag="validation_other", metric_names=[
-                                                "wer", "cer"], another_engine=trainer),
-                        event_name=Events.EPOCH_COMPLETED)
+                         log_handler=OutputHandler(tag="validation_other", metric_names=[
+                             "wer", "cer"], another_engine=trainer),
+                         event_name=Events.EPOCH_COMPLETED)
         tb_logger.attach(evaluator_airtel,
-                        log_handler=OutputHandler(tag="validation_airtel", metric_names=[
-                                                "wer", "cer"], another_engine=trainer),
-                        event_name=Events.EPOCH_COMPLETED)
+                         log_handler=OutputHandler(tag="validation_airtel", metric_names=[
+                             "wer", "cer"], another_engine=trainer),
+                         event_name=Events.EPOCH_COMPLETED)
         tb_logger.attach(evaluator_airtel_payments,
-                        log_handler=OutputHandler(tag="validation_airtel_payments", metric_names=[
-                                                "wer", "cer"], another_engine=trainer),
-                        event_name=Events.EPOCH_COMPLETED)
+                         log_handler=OutputHandler(tag="validation_airtel_payments", metric_names=[
+                             "wer", "cer"], another_engine=trainer),
+                         event_name=Events.EPOCH_COMPLETED)
         pbar.attach(trainer, output_transform=lambda x: {'loss': x})
         pbar_valid.attach(evaluator_clean, [
-                        'wer', 'cer'], event_name=Events.EPOCH_COMPLETED, closing_event_name=Events.COMPLETED)
+            'wer', 'cer'], event_name=Events.EPOCH_COMPLETED, closing_event_name=Events.COMPLETED)
         pbar_valid_other.attach(evaluator_other, [
                                 'wer', 'cer'], event_name=Events.EPOCH_COMPLETED, closing_event_name=Events.COMPLETED)
         pbar_valid_airtel.attach(evaluator_airtel, [
-                                'wer', 'cer'], event_name=Events.EPOCH_COMPLETED, closing_event_name=Events.COMPLETED)
+            'wer', 'cer'], event_name=Events.EPOCH_COMPLETED, closing_event_name=Events.COMPLETED)
         pbar_valid_airtel_payments.attach(evaluator_airtel_payments, [
-                                'wer', 'cer'], event_name=Events.EPOCH_COMPLETED, closing_event_name=Events.COMPLETED)
+            'wer', 'cer'], event_name=Events.EPOCH_COMPLETED, closing_event_name=Events.COMPLETED)
         timer.attach(trainer)
 
     @trainer.on(Events.STARTED)
@@ -242,15 +236,14 @@ def main():
             engine.state.epoch += 1
             train_clean.set_epochs(engine.state.epoch)
             train_other.set_epochs(engine.state.epoch)
-            if args.local_rank == 0:
-                model.eval()
-                logger.info('Model set to eval mode')
-                evaluator_clean.run(test_loader_clean)
-                evaluator_other.run(test_loader_other)
-                evaluator_airtel.run(test_loader_airtel)
-                evaluator_airtel_payments.run(test_loader_airtel_payments)
-                model.train()
-                logger.info('Model set back to train mode')
+            model.eval()
+            logger.info('Model set to eval mode')
+            evaluator_clean.run(test_loader_clean)
+            evaluator_other.run(test_loader_other)
+            evaluator_airtel.run(test_loader_airtel)
+            evaluator_airtel_payments.run(test_loader_airtel_payments)
+            model.train()
+            logger.info('Model set back to train mode')
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def after_complete(engine):
@@ -258,9 +251,9 @@ def main():
             engine.state.epoch, timer.value()))
         timer.reset()
 
-    @evaluator_other.on(Events.EPOCH_COMPLETED)
-    def save_checkpoints(engine):
-        if args.local_rank == 0:
+    if args.local_rank == 0:
+        @evaluator_other.on(Events.EPOCH_COMPLETED)
+        def save_checkpoints(engine):
             metrics = engine.state.metrics
             wer = metrics['wer']
             cer = metrics['cer']
@@ -270,12 +263,13 @@ def main():
             best_meter.update(wer, cer, epoch)
 
     trainer.run(train_loader_labbeled_loader, max_epochs=epochs)
-    tb_logger.close()
+    if args.local_rank == 0:
+        tb_logger.close()
 
 def ddp_main():
     torch.backends.cudnn.enabled = True
-    torch.backends.cudnn.benchmark = True
-    torch.backends.cudnn.deterministic = False
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
     parser = argparse.ArgumentParser()
     parser.add_argument("--local_rank", default=0, type=int)
     args = parser.parse_args()
@@ -284,7 +278,7 @@ def ddp_main():
     return args
 
 args = ddp_main()
-main()
+main(args.local_rank)
 
 if __name__ == "__main__":
     main()

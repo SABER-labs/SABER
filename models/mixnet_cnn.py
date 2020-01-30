@@ -39,6 +39,7 @@ class ASRModel(nn.Module):
         stem_channels = 24
         final_channels = 768
         dropout_rate = 0.0
+        self.dropout_present = (dropout_rate > 0)
 
         # depth multiplier
         stem_channels = _RoundChannels(stem_channels*width_multiplier)
@@ -67,7 +68,8 @@ class ASRModel(nn.Module):
             config[-1][1], self._stage_out_channels, kernel_size=27, non_linear='Mish', dilation=2)
         self.head_conv2 = Conv1x1Bn(
             self._stage_out_channels, self._stage_out_channels, non_linear='Mish')
-        self.dropout = nn.Dropout(dropout_rate)
+        if self.dropout_present:
+            self.dropout = nn.Dropout(dropout_rate)
         self.classifier = nn.Conv1d(self._stage_out_channels, num_classes, 1, 1, bias=True)
         self._initialize_weights()
 
@@ -76,7 +78,8 @@ class ASRModel(nn.Module):
         x = self.layers(x)
         x = self.head_conv1(x)
         x = self.head_conv2(x)
-        x = self.dropout(x)
+        if self.dropout_present:
+            x = self.dropout(x)
         x = self.classifier(x)
         return x
 

@@ -2,6 +2,7 @@ import Levenshtein as Lev
 import numpy as np
 from utils.model_utils import get_most_probable
 from ignite.metrics import Metric, Accuracy
+from ignite.metrics.metric import sync_all_reduce, reinit__is_reduced
 from datasets.librispeech import get_sentence
 import torch
 
@@ -79,6 +80,7 @@ class AverageMeter(object):
 
 class WordErrorRate(Accuracy):
 
+    @reinit__is_reduced
     def update(self, output):
         with torch.no_grad():
             y_pred, labels, label_lengths = output
@@ -88,6 +90,7 @@ class WordErrorRate(Accuracy):
 
 class CharacterErrorRate(Accuracy):
 
+    @reinit__is_reduced
     def update(self, output):
         with torch.no_grad():
             y_pred, labels, label_lengths = output

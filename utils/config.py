@@ -31,13 +31,13 @@ ref_db = 20
 max_db = 100
 
 # Model training configs
-num_cores = 10
+num_cores = 30
 
 # Training configs
 gpu_id = '0,1,2'
 workers = 50
 train_batch_size = 16 * len(gpu_id.split(","))
-epochs = 500
+epochs = 400
 lr = 1e-3
 cyclic_lr_min = 1e-5
 lr_gamma = 0.1
