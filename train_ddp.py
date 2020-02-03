@@ -5,8 +5,9 @@ from datasets.librispeech import get_sentence
 from utils import config
 import os
 import torch
+
 from torch.nn.parallel import DistributedDataParallel
-from models.quartznet import ASRModel
+from models.mixnet_cnn import ASRModel
 from utils.logger import logger
 from functools import partial
 from datasets.librispeech import allign_collate, image_train_transform, image_val_transform
@@ -46,8 +47,8 @@ def main(local_rank):
                      num_classes=config.vocab_size).to(device)
     logger.info(
         f'Model initialized with {get_model_size(model):.3f}M parameters')
-    model = DistributedDataParallel(model, device_ids=[local_rank], output_device=local_rank)
     optimizer = Ranger(model.parameters(), lr=config.lr, eps=1e-5)
+    model = DistributedDataParallel(model, device_ids=[local_rank], output_device=local_rank, check_reduction=True)
     load_checkpoint(model, optimizer, params)
     print(f"Loaded model on {local_rank}")
     start_epoch = params['start_epoch']
@@ -138,13 +139,13 @@ def main(local_rank):
     train_sampler_unlabbeled = torch.utils.data.distributed.DistributedSampler(
         train_other, num_replicas=3, rank=args.local_rank)
     test_sampler_clean = torch.utils.data.distributed.DistributedSampler(
-        test_clean, num_replicas=3, rank=args.local_rank)
+        test_clean, num_replicas=3, rank=args.local_rank, shuffle=False)
     test_sampler_other = torch.utils.data.distributed.DistributedSampler(
-        test_other, num_replicas=3, rank=args.local_rank)
+        test_other, num_replicas=3, rank=args.local_rank, shuffle=False)
     test_sampler_airtel = torch.utils.data.distributed.DistributedSampler(
-        test_airtel, num_replicas=3, rank=args.local_rank)
+        test_airtel, num_replicas=3, rank=args.local_rank, shuffle=False)
     test_sampler_airtel_payments = torch.utils.data.distributed.DistributedSampler(
-        test_payments_airtel, num_replicas=3, rank=args.local_rank)
+        test_payments_airtel, num_replicas=3, rank=args.local_rank, shuffle=False)
 
     train_loader_labbeled_loader = torch.utils.data.DataLoader(
         train_clean, batch_size=train_batch_size // 3, sampler=train_sampler_labbeled, num_workers=config.workers // 3, pin_memory=True, collate_fn=allign_collate)
@@ -245,12 +246,6 @@ def main(local_rank):
             model.train()
             logger.info('Model set back to train mode')
 
-    @trainer.on(Events.EPOCH_COMPLETED)
-    def after_complete(engine):
-        logger.info('Epoch {} done. Time per batch: {:.3f}[s]'.format(
-            engine.state.epoch, timer.value()))
-        timer.reset()
-
     if args.local_rank == 0:
         @evaluator_other.on(Events.EPOCH_COMPLETED)
         def save_checkpoints(engine):
@@ -261,6 +256,12 @@ def main(local_rank):
             scheduler.step(wer)
             save_checkpoint(model, optimizer, best_meter, wer, cer, epoch)
             best_meter.update(wer, cer, epoch)
+
+        @trainer.on(Events.EPOCH_COMPLETED)
+        def after_complete(engine):
+            logger.info('Epoch {} done. Time per batch: {:.3f}[s]'.format(
+                engine.state.epoch, timer.value()))
+            timer.reset()
 
     trainer.run(train_loader_labbeled_loader, max_epochs=epochs)
     if args.local_rank == 0:
@@ -274,7 +275,7 @@ def ddp_main():
     parser.add_argument("--local_rank", default=0, type=int)
     args = parser.parse_args()
     torch.cuda.set_device(args.local_rank)
-    torch.distributed.init_process_group(backend='nccl', init_method='env://')
+    torch.distributed.init_process_group(backend='nccl', world_size=3, init_method='env://')
     return args
 
 args = ddp_main()
