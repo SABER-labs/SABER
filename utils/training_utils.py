@@ -44,6 +44,16 @@ def save_checkpoint(model, optimizer, best_meter, wer, cer, epoch):
         torch.save(state, checkpoint_path)
         logger.info(f'Best Model Saved to {checkpoint_path}')
 
+def load_state_dict_model(model, pre_trainmodel):
+    model_dict = model.state_dict()
+    for k, _ in model_dict.items():
+        pkeys = [k.replace('module.', '') for k in list(pre_trainmodel.keys())]
+        if k in list(pre_trainmodel.keys()):
+            model_dict[k] = pre_trainmodel[k]
+        elif k in pkeys:
+            model_dict[k] = pre_trainmodel['module.' + k]
+    model.load_state_dict(model_dict)
+
 def load_checkpoint(model, optimizer, params):
     version = config.best_model_version
     if config.checkpoint_version != '':
@@ -51,7 +61,7 @@ def load_checkpoint(model, optimizer, params):
     checkpoint_path = os.path.join(config.checkpoint_root, version)
     if os.path.exists(checkpoint_path):
         loader = torch.load(checkpoint_path, map_location='cpu')
-        model.load_state_dict(loader['model_state_dict'])
+        load_state_dict_model(model, loader['model_state_dict'])
         optimizer.load_state_dict(loader['optimizer_state_dict'])
         if torch.cuda.is_available():
             for state in optimizer.state.values():
