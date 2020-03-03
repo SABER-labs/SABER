@@ -16,7 +16,7 @@ class ASRModel(nn.Module):
     strides = [1, 1, 1, 1, 1]
     growths = [1, 6, 6, 6, 6]
     squeeze_excites = [False, True, True, True, True]
-    repeats = [3, 3, 3, 3, 3]
+    repeats = [2, 3, 3, 3, 4]
     non_linearities = ['Mish', 'Mish', 'Mish', 'Mish', 'Mish']
     in_channels =  [24, 56, 152, 344, 568]
     out_channels = [56, 152, 344, 568, 568]

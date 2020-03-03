@@ -5,7 +5,6 @@ from utils.config import alpha_lm, beta_lm, lm_model_path, beam_width, cpus_for_
 # from ctc_decoders import ctc_beam_search_decoder_batch, Scorer
 import os
 
-# import pdb; pdb.set_trace()
 # scorer = Scorer(alpha_lm, beta_lm, lm_model_path, sentencepiece_model, get_vocab_list())
 
 def get_most_probable(tensor):

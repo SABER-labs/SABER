@@ -36,7 +36,7 @@ num_cores = 30
 # Training configs
 gpu_id = '0,1,2'
 workers = 50
-train_batch_size = 16 * len(gpu_id.split(","))
+train_batch_size = 12 * len(gpu_id.split(","))
 epochs = 400
 lr = 1e-3
 cyclic_lr_min = 1e-5

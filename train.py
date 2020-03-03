@@ -24,9 +24,9 @@ from utils.training_utils import load_checkpoint
 import numpy as np
 np.random.bit_generator = np.random._bit_generator
 
-torch.backends.cudnn.enabled = False
-torch.backends.cudnn.benchmark = True
-torch.backends.cudnn.deterministic = False
+torch.backends.cudnn.enabled = True
+torch.backends.cudnn.benchmark = False
+torch.backends.cudnn.deterministic = True
 
 
 def get_alpha(epoch):
@@ -99,7 +99,7 @@ def main():
             engine.state.train_loader_labbeled)
 
         imgs_sup = imgs_sup.to(device)
-        labels_sup = labels_sup.to(device)
+        labels_sup = labels_sup
         probs_sup = model(imgs_sup)
         
         # Unsupervised gt, pred
