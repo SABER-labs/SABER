@@ -10,7 +10,7 @@ sp = spm.SentencePieceProcessor()
 sp.Load(config.sentencepiece_model)
 logger.info(f'{config.sentencepiece_model} has been loaded!')
 
-def convert_to_mel(signal, frac_to_apply=0.8):
+def convert_to_mel(signal, frac_to_apply=0.5):
     data = {'samples': signal.squeeze(0),
             'sample_rate': config.sampling_rate}
     stretch = RandomApply([StretchAudio()], p=frac_to_apply)
