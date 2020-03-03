@@ -56,7 +56,7 @@ def main():
     start_epoch = params['start_epoch']
     sup_criterion = CustomCTCLoss()
     unsup_criterion = UDALoss()
-    # tb_logger = TensorboardLogger(log_dir=log_path)
+    tb_logger = TensorboardLogger(log_dir=log_path)
     pbar = ProgressBar(persist=True, desc="Training")
     pbar_valid = ProgressBar(persist=True, desc="Validation Clean")
     pbar_valid_other = ProgressBar(persist=True, desc="Validation Other")
