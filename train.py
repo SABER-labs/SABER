@@ -95,19 +95,18 @@ def main():
         optimizer.zero_grad()
 
         # Supervised gt, pred
-        imgs_sup, labels_sup, label_lengths = next(
+        imgs_sup, labels_sup, label_lengths, input_lengths = next(
             engine.state.train_loader_labbeled)
 
         imgs_sup = imgs_sup.to(device)
         labels_sup = labels_sup
         probs_sup = model(imgs_sup)
-        
         # Unsupervised gt, pred
         # imgs_unsup, augmented_imgs_unsup = next(engine.state.train_loader_unlabbeled)
         # with torch.no_grad():
         #     probs_unsup = model(imgs_unsup.to(device))
         # probs_aug_unsup = model(augmented_imgs_unsup.to(device))
-        sup_loss = sup_criterion(probs_sup, labels_sup, label_lengths)
+        sup_loss = sup_criterion(probs_sup, labels_sup, label_lengths, input_lengths)
         # unsup_loss = unsup_criterion(probs_unsup, probs_aug_unsup)
 
         # Blend supervised and unsupervised losses till unsupervision_warmup_epoch
@@ -122,7 +121,7 @@ def main():
 
     @torch.no_grad()
     def validate_update_function(engine, batch):
-        img, labels, label_lengths = batch
+        img, labels, label_lengths, image_lengths = batch
         y_pred = model(img.to(device))
         if np.random.rand() > 0.99:
             pred_sentences = get_most_probable(y_pred)

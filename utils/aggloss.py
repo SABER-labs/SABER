@@ -49,10 +49,10 @@ class FocalACELoss(ACELoss):
 
 class CustomCTCLoss(nn.Module):
 
-    def forward(self, logits, targets, target_lengths):
+    def forward(self, logits, targets, target_lengths, input_lengths):
         log_probs = torch.log_softmax(logits, dim=1)
         log_probs = log_probs.permute(2, 0, 1).contiguous()
-        input_lengths = torch.full(size=(log_probs.size(1),), fill_value=log_probs.size(0), dtype=torch.int32)
+        # input_lengths = torch.full(size=(log_probs.size(1),), fill_value=log_probs.size(0), dtype=torch.int32)
         return F.ctc_loss(log_probs, targets, input_lengths, target_lengths, blank=0, reduction='mean', zero_infinity=False)
 
 

@@ -7,9 +7,9 @@ import torch
 from utils.logger import logger
 from utils.vocab import Vocab
 
-# sp = spm.SentencePieceProcessor()
-# sp.Load(config.sentencepiece_model)
-sp = Vocab()
+sp = spm.SentencePieceProcessor()
+sp.Load(config.sentencepiece_model)
+# sp = Vocab()
 logger.info(f'{config.sentencepiece_model} has been loaded!')
 
 def convert_to_mel(signal, frac_to_apply=0.5):
@@ -39,17 +39,23 @@ def image_val_transform(spec, epoch):
         ['mel_spectrogram'])])
     return transforms(data)
 
-# def label_transform(label):
-#     return np.array(sp.EncodeAsIds(label.lower()), dtype=np.int32)
-
-# def label_re_transform(classes):
-#     return sp.DecodeIds(classes)
-
 def label_transform(label):
-    return np.array(sp.encode(label.lower()), dtype=np.int32)
+    return np.array(sp.EncodeAsIds(label.lower()), dtype=np.int32)
 
 def label_re_transform(classes):
-    return sp.decode(classes)
+    return sp.DecodeIds(classes)
+
+def get_vocab_list():
+    return [sp.IdToPiece(id) for id in range(sp.GetPieceSize())][1:]
+
+# def label_transform(label):
+#     return np.array(sp.encode(label.lower()), dtype=np.int32)
+
+# def label_re_transform(classes):
+#     return sp.decode(classes)
+
+# def get_vocab_list():
+#     return sp.vocab
 
 def allign_collate(batch, device='cpu'):
     img_list, label_list = zip(*batch)
@@ -61,7 +67,8 @@ def allign_collate(batch, device='cpu'):
     imgs = torch.from_numpy(imgs)
     labels = torch.from_numpy(flat_label_list)
     label_lengths = torch.from_numpy(lengths)
-    return (imgs, labels, label_lengths)
+    image_lengths = torch.tensor([img.shape[1] / 2 for img in img_list], dtype=torch.int32) # model stride is 2
+    return (imgs, labels, label_lengths, image_lengths)
 
 def align_collate_unlabelled(batch, device='cpu'):
     img_list, img_aug_list = zip(*batch)
@@ -88,9 +95,3 @@ def sequence_to_string(sequence):
 
 def get_sentence(sequence):
     return sequence_to_string(process_seq(sequence))
-
-# def get_vocab_list():
-#     return [sp.IdToPiece(id) for id in range(sp.GetPieceSize())][1:]
-
-def get_vocab_list():
-    return sp.vocab
