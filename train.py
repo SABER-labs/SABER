@@ -16,7 +16,7 @@ from ignite.engine import Events, Engine
 from ignite.metrics import Loss
 from utils.metrics import WordErrorRate, CharacterErrorRate
 from ignite.handlers import ModelCheckpoint, Timer
-from ignite.contrib.handlers.tensorboard_logger import *
+# from ignite.contrib.handlers.tensorboard_logger import *
 from ignite.contrib.handlers.tqdm_logger import ProgressBar
 from utils.optimizers import RAdam, NovoGrad, Ranger
 from utils.aggloss import ACELoss, UDALoss, CustomCTCLoss, FocalACELoss, FocalUDALoss, CustomFocalCTCLoss
@@ -56,7 +56,7 @@ def main():
     start_epoch = params['start_epoch']
     sup_criterion = CustomCTCLoss()
     unsup_criterion = UDALoss()
-    tb_logger = TensorboardLogger(log_dir=log_path)
+    # tb_logger = TensorboardLogger(log_dir=log_path)
     pbar = ProgressBar(persist=True, desc="Training")
     pbar_valid = ProgressBar(persist=True, desc="Validation Clean")
     pbar_valid_other = ProgressBar(persist=True, desc="Validation Other")
@@ -162,39 +162,39 @@ def main():
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=config.lr_gamma, patience=int(
         config.epochs * 0.05), verbose=True, threshold_mode="abs", cooldown=int(config.epochs * 0.025), min_lr=1e-5)
 
-    tb_logger.attach(trainer, log_handler=OutputHandler(tag="training", output_transform=lambda loss: {'loss': loss}),
-                     event_name=Events.ITERATION_COMPLETED)
-    tb_logger.attach(trainer,
-                     log_handler=OptimizerParamsHandler(optimizer),
-                     event_name=Events.ITERATION_STARTED)
-    tb_logger.attach(trainer,
-                     log_handler=WeightsHistHandler(model),
-                     event_name=Events.EPOCH_COMPLETED)
-    tb_logger.attach(trainer,
-                     log_handler=WeightsScalarHandler(model),
-                     event_name=Events.ITERATION_COMPLETED)
-    tb_logger.attach(trainer,
-                     log_handler=GradsScalarHandler(model),
-                     event_name=Events.ITERATION_COMPLETED)
-    tb_logger.attach(trainer,
-                     log_handler=GradsHistHandler(model),
-                     event_name=Events.EPOCH_COMPLETED)
-    tb_logger.attach(evaluator_clean,
-                     log_handler=OutputHandler(tag="validation_clean", metric_names=[
-                                               "wer", "cer"], another_engine=trainer),
-                     event_name=Events.EPOCH_COMPLETED)
-    tb_logger.attach(evaluator_other,
-                     log_handler=OutputHandler(tag="validation_other", metric_names=[
-                                               "wer", "cer"], another_engine=trainer),
-                     event_name=Events.EPOCH_COMPLETED)
-    tb_logger.attach(evaluator_airtel,
-                     log_handler=OutputHandler(tag="validation_airtel", metric_names=[
-                                               "wer", "cer"], another_engine=trainer),
-                     event_name=Events.EPOCH_COMPLETED)
-    tb_logger.attach(evaluator_airtel_payments,
-                     log_handler=OutputHandler(tag="validation_airtel_payments", metric_names=[
-                                               "wer", "cer"], another_engine=trainer),
-                     event_name=Events.EPOCH_COMPLETED)
+    # tb_logger.attach(trainer, log_handler=OutputHandler(tag="training", output_transform=lambda loss: {'loss': loss}),
+    #                  event_name=Events.ITERATION_COMPLETED)
+    # tb_logger.attach(trainer,
+    #                  log_handler=OptimizerParamsHandler(optimizer),
+    #                  event_name=Events.ITERATION_STARTED)
+    # tb_logger.attach(trainer,
+    #                  log_handler=WeightsHistHandler(model),
+    #                  event_name=Events.EPOCH_COMPLETED)
+    # tb_logger.attach(trainer,
+    #                  log_handler=WeightsScalarHandler(model),
+    #                  event_name=Events.ITERATION_COMPLETED)
+    # tb_logger.attach(trainer,
+    #                  log_handler=GradsScalarHandler(model),
+    #                  event_name=Events.ITERATION_COMPLETED)
+    # tb_logger.attach(trainer,
+    #                  log_handler=GradsHistHandler(model),
+    #                  event_name=Events.EPOCH_COMPLETED)
+    # tb_logger.attach(evaluator_clean,
+    #                  log_handler=OutputHandler(tag="validation_clean", metric_names=[
+    #                                            "wer", "cer"], another_engine=trainer),
+    #                  event_name=Events.EPOCH_COMPLETED)
+    # tb_logger.attach(evaluator_other,
+    #                  log_handler=OutputHandler(tag="validation_other", metric_names=[
+    #                                            "wer", "cer"], another_engine=trainer),
+    #                  event_name=Events.EPOCH_COMPLETED)
+    # tb_logger.attach(evaluator_airtel,
+    #                  log_handler=OutputHandler(tag="validation_airtel", metric_names=[
+    #                                            "wer", "cer"], another_engine=trainer),
+    #                  event_name=Events.EPOCH_COMPLETED)
+    # tb_logger.attach(evaluator_airtel_payments,
+    #                  log_handler=OutputHandler(tag="validation_airtel_payments", metric_names=[
+    #                                            "wer", "cer"], another_engine=trainer),
+    #                  event_name=Events.EPOCH_COMPLETED)
     pbar.attach(trainer, output_transform=lambda x: {'loss': x})
     pbar_valid.attach(evaluator_clean, [
                       'wer', 'cer'], event_name=Events.EPOCH_COMPLETED, closing_event_name=Events.COMPLETED)
@@ -250,7 +250,7 @@ def main():
         best_meter.update(wer, cer, epoch)
 
     trainer.run(train_loader_labbeled_loader, max_epochs=epochs)
-    tb_logger.close()
+    # tb_logger.close()
 
 
 if __name__ == "__main__":
