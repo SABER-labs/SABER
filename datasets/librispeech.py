@@ -9,7 +9,7 @@ from utils.vocab import Vocab
 
 # sp = spm.SentencePieceProcessor()
 # sp.Load(config.sentencepiece_model)
-sp = Vocab(counter)
+sp = Vocab()
 logger.info(f'{config.sentencepiece_model} has been loaded!')
 
 def convert_to_mel(signal, frac_to_apply=0.5):
@@ -89,5 +89,8 @@ def sequence_to_string(sequence):
 def get_sentence(sequence):
     return sequence_to_string(process_seq(sequence))
 
+# def get_vocab_list():
+#     return [sp.IdToPiece(id) for id in range(sp.GetPieceSize())][1:]
+
 def get_vocab_list():
-    return [sp.IdToPiece(id) for id in range(sp.GetPieceSize())][1:]
+    return sp.vocab
