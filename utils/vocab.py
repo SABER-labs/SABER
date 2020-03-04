@@ -7,7 +7,13 @@ class Vocab(object):
         self.vocab = vocab
 
     def encode(self, text):
-        return [self.vocab.index(c) + 1 for c in text.lower() if c in self.vocab]
+        idxs = [self.vocab.index(c) + 1 for c in text.lower() if c in self.vocab]
+        for idx in reversed(idxs):
+            if idx == len(self) - 1:
+                idxs.pop()
+            else:
+                break
+        return idxs
 
     def decode(self, tokens):
         return ''.join([self.vocab[token-1] for token in tokens if token > 0])
@@ -17,7 +23,7 @@ class Vocab(object):
 
 if __name__ == "__main__":
     vc = Vocab()
-    tensor = vc.encode("My, awesome daylight!")
+    tensor = vc.encode("WTF, \'where did HE GO TO! $$ %\'")
     print(tensor)
     print(vc.decode(tensor))
     print(len(vc))

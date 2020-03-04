@@ -7,7 +7,7 @@ libri_unlabeled_data_sets = ['train-clean-360', 'train-other-500']
 libri_test_clean_data_sets = ['test-clean']
 libri_test_other_data_sets = ['test-other']
 libri_dev_data_sets = ['dev-clean', 'dev-other']
-vocab_size = 128
+vocab_size = 28
 sentencepiece_model = f'dataset_scripts/sp_librispeech_{vocab_size}.model'
 lmdb_root_path = f'lmdb-databases-librispeech_{vocab_size}'
 lmdb_commonvoice_root_path = f'lmdb-databases-common_voice_{vocab_size}'
@@ -39,14 +39,12 @@ workers = 50
 train_batch_size = 12 * len(gpu_id.split(","))
 epochs = 400
 lr = 1e-3
-cyclic_lr_min = 1e-5
 lr_gamma = 0.1
-lr_decay_step = [2, 70]
 checkpoint_root = f'checkpoints_saber_{vocab_size}'
 log_path = f"checkpoints_logs/exp-{checkpoint_root}"
 checkpoint_version = ''
 best_model_version = 'best_saber.pth'
-min_frac = 0.5
+min_frac = 0.6
 max_frac = 0.9
 
 # UDA hyper-params
