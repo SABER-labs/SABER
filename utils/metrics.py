@@ -2,9 +2,13 @@ import Levenshtein as Lev
 import numpy as np
 from utils.model_utils import get_most_probable
 from ignite.metrics import Metric, Accuracy
-from ignite.metrics.metric import sync_all_reduce, reinit__is_reduced
-from datasets.librispeech import get_sentence
+from ignite.metrics.metric import reinit__is_reduced
+from datasets.librispeech import get_sentence, get_vocab_list
 import torch
+
+def clean_gt(s2):
+    s2 = ''.join([s for s in s2 if s in get_vocab_list()])
+    return s2.strip()
 
 def werCalc(s1, s2):
     """
@@ -15,7 +19,7 @@ def werCalc(s1, s2):
         s2 (string): space-separated sentence
     """
     s1 = s1.lower()
-    s2 = s2.lower()
+    s2 = clean_gt(s2.lower())
     # build mapping of words to integers
     b = set(s1.split() + s2.split())
     word2char = dict(zip(b, range(len(b))))
@@ -34,8 +38,8 @@ def cerCalc(s1, s2):
         s2 (string): space-separated sentence
     """
     s1 = s1.lower()
-    s2 = s2.lower()
-    s1, s2, = s1.replace(' ', ''), s2.replace(' ', '')
+    s2 = clean_gt(s2.lower())
+    s1, s2 = s1.replace(' ', ''), s2.replace(' ', '')
     return Lev.distance(s1, s2) / len(s2)
 
 def batch_wer_accuracy(preds, labels, label_lengths):
@@ -99,4 +103,8 @@ class CharacterErrorRate(Accuracy):
         self._num_examples += label_lengths.shape[0]
 
 if __name__ == "__main__":
+    s1 = "WTF WHO ARE YOu ? $!"
+    s2 = "wff who are you"
+    wer = werCalc(s2, s1)
+    cer = cerCalc(s2, s1)
     print(wer, cer)
