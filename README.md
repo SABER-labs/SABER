@@ -19,7 +19,7 @@ SABER consists of the following components
 * python3.x
 * libraries in requirements.txt
 
-## Download & Seutp
+## Download & Setup
 
 Librispeech & CommonVoice datasets using download scripts, change dir parameter as per your configuration
 ```
