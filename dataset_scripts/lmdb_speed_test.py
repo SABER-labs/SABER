@@ -17,7 +17,7 @@ def test_data(loader, name, epoch):
     min_ratios = []
     audio_size = []
     for i, x in enumerate(tqdm(loader)):
-        img, label, label_lengths = x
+        img, label, label_lengths, image_lengths = x
         max_length = max(max_length, label_lengths.max().item())
         ratios = img.shape[2] / label_lengths.max().item()
         audio_size.append(img.shape[2])
