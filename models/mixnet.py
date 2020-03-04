@@ -57,7 +57,7 @@ def split(n, m):
     return sorted(result)
 
 class MixNetBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride, expand_ratio, non_linear='Mish', sq_ex=False, drop_connect_rate=0.1):
+    def __init__(self, in_channels, out_channels, kernel_size, stride, expand_ratio, non_linear='Mish', sq_ex=False, drop_connect_rate=0.05):
         super(MixNetBlock, self).__init__()
 
         expand = (expand_ratio != 1)
