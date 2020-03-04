@@ -112,7 +112,7 @@ class MixNetBlock(nn.Module):
 
     def forward(self, x):
         if self.residual_connection:
-            return x + self.conv(x)
+            return x + self._drop_connect(self.conv(x))
         else:
             return self.conv(x)
 
