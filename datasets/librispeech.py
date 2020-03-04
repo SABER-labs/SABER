@@ -12,7 +12,7 @@ sp.Load(config.sentencepiece_model)
 # sp = Vocab()
 logger.info(f'{config.sentencepiece_model} has been loaded!')
 
-def convert_to_mel(signal, frac_to_apply=0.5):
+def convert_to_mel(signal, frac_to_apply=0.3):
     data = {'samples': signal.squeeze(0),
             'sample_rate': config.sampling_rate}
     stretch = RandomApply([StretchAudio()], p=frac_to_apply)
