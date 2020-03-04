@@ -6,7 +6,7 @@ Contributions are welcome.
 ## Overview
 SABER consists of the following components
 
-* An Mixnet based variant of QuartzNet by NVIDIA
+* Several SOTA models including an Mixnet based variant of QuartzNet by NVIDIA.
 * Ranger (RAdam + Lookahead) optimizer to offset warmup used by SpecAugment (by Leslie Smith)
 * Mish activation function
 * Data Augmentions used are SpecNoise, SpecAugment, SpecSparkle a cutout inspired variant, SpecBlur (a novel approach). Augmentation parameters linearly increase in a curriculum based approach.
@@ -21,23 +21,28 @@ SABER consists of the following components
 
 ## Download & Seutp
 
-Librispeech dataset using download scripts, change dir parameter as per your configuration
+Librispeech & CommonVoice datasets using download scripts, change dir parameter as per your configuration
 ```
 sh download_scripts/download_librispeech.sh
 sh download_scripts/extract_librispeech_tars.sh
+sh download_scripts/download_common_voice.sh
+sh download_scripts/extract_common_voice_tars.sh
 ```
 
 Setup sentencepeiece vocab & form LMDB dataset.
 ```
 sh dataset_scripts/librispeech_all_lines.sh
 sh dataset_scripts/librispeech_sentencepiece_model.sh
-sh dataset_scripts/create_librispeech_lmdb.py
+OMP_NUM_THREADS="1" OPENBLAS_NUM_THREADS="1" python3 -W ignore -m dataset_scripts.create_librispeech_lmdb
+OMP_NUM_THREADS="1" OPENBLAS_NUM_THREADS="1" python3 -W ignore -m dataset_scripts.create_commonvoice_lmdb
+OMP_NUM_THREADS="1" OPENBLAS_NUM_THREADS="1" python3 -W ignore -m dataset_scripts.create_airtel_lmdb
+OMP_NUM_THREADS="1" OPENBLAS_NUM_THREADS="1" python3 -W ignore -m dataset_scripts.create_airtelpayments_lmdb
 ```
 
 ## Training
 Modify `utils/config.py` as per your configuration and run
 ```
-CUDA_VISIBLE_DEVICES="0,1,2" python3 train.py
+OMP_NUM_THREADS="1" CUDA_VISIBLE_DEVICES="0,1,2" python3.6 train.py
 ```
 
 
