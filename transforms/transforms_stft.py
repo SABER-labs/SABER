@@ -35,7 +35,7 @@ class ToSTFT(object):
 class StretchAudioOnSTFT(object):
     """Stretches an audio on the frequency domain."""
 
-    def __init__(self, max_scale=[0.75, 1.75]):
+    def __init__(self, max_scale=[0.9, 1.25]):
         self.max_scale = max_scale
 
     def __call__(self, data):
