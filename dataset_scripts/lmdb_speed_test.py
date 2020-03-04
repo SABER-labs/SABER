@@ -45,7 +45,7 @@ if __name__ == '__main__':
     testAirtelPaymentsPath = os.path.join(lmdb_airtel_payments_root_path, 'test-labelled-en')
     # data_train = lmdbMultiDataset(roots=[trainLabbeledPath, trainUnLabelledPath, trainAirtelPaymentsPath], transform=image_train_transform)
     # data_test = lmdbMultiDataset(roots=[testAirtelPaymentsPath, testCleanPath, testOtherPath], transform=image_val_transform)
-    data_train = lmdbMultiDataset(roots=[rainAirtelPaymentsPath], transform=image_train_transform)
+    data_train = lmdbMultiDataset(roots=[trainAirtelPaymentsPath], transform=image_train_transform)
     data_test = lmdbMultiDataset(roots=[testAirtelPaymentsPath], transform=image_val_transform)
     logger.info(f'Number of examples in train is {len(data_train)}')
     logger.info(f'Number of examples in test is {len(data_test)}')
