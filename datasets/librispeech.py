@@ -12,14 +12,16 @@ sp.Load(config.sentencepiece_model)
 # sp = Vocab()
 logger.info(f'{config.sentencepiece_model} has been loaded!')
 
-def convert_to_mel(signal, frac_to_apply=0.3):
+def convert_to_mel(signal, frac_to_apply=0.3, train=True):
     data = {'samples': signal.squeeze(0),
             'sample_rate': config.sampling_rate}
     stretch = RandomApply([StretchAudio()], p=frac_to_apply)
     to_stft = ToSTFT(n_fft=config.n_fft, hop_length=config.hop_length,
                      win_length=config.window_length)
     stft_to_mel = ToMelSpectrogramFromSTFT(n_mels=config.num_mel_banks)
-    transforms = [ stretch, to_stft, stft_to_mel, DeleteSTFT(), ToAudioTensor(['mel_spectrogram']) ]
+    transforms = [ to_stft, stft_to_mel, DeleteSTFT(), ToAudioTensor(['mel_spectrogram']) ]
+    if train:
+        transforms = [stretch] + transforms
     return Compose(transforms)(data)
 
 def image_train_transform(spec, epoch):

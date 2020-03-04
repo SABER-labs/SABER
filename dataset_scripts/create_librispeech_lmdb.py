@@ -4,6 +4,7 @@ from utils.lmdb import createDataset_parallel as createDataset
 from utils.logger import logger
 from datasets.librispeech import convert_to_mel, label_transform
 import os
+from functools import partial
 
 def exclude_func(img, label):
     audio_size = img.squeeze(0).shape[0]
@@ -23,6 +24,7 @@ if __name__ == '__main__':
     os.makedirs(testOtherPath, exist_ok=True)
     os.makedirs(devPath, exist_ok=True)
     logger.info('Loading datasets')
+    convert_to_mel_val = partial(convert_to_mel, train=False)
 
     data_labbeled = datasets.LibriSpeech(root=libri_dataset_root, sets=libri_labelled_data_sets, download=False)
     logger.info('Labelled dataset loaded')
@@ -38,18 +40,18 @@ if __name__ == '__main__':
 
     data_test_clean= datasets.LibriSpeech(root=libri_dataset_root, sets=libri_test_clean_data_sets, download=False)
     logger.info('test clean dataset loaded')
-    createDataset(testCleanPath, data_test_clean, convert_to_mel, label_transform, exclude_func)
+    createDataset(testCleanPath, data_test_clean, convert_to_mel_val, label_transform, exclude_func)
     logger.info(f"Num of test clean examples {len(data_test_clean)}")
     del data_test_clean
     
     data_test_other = datasets.LibriSpeech(root=libri_dataset_root, sets=libri_test_other_data_sets, download=False)
     logger.info('test other dataset loaded')
-    createDataset(testOtherPath, data_test_other, convert_to_mel, label_transform, exclude_func)
+    createDataset(testOtherPath, data_test_other, convert_to_mel_val, label_transform, exclude_func)
     logger.info(f"Num of test other examples {len(data_test_other)}")
     del data_test_other
     
     data_dev = datasets.LibriSpeech(root=libri_dataset_root, sets=libri_dev_data_sets, download=False)
     logger.info('dev dataset loaded')
-    createDataset(devPath, data_dev, convert_to_mel, label_transform, exclude_func)
+    createDataset(devPath, data_dev, convert_to_mel_val, label_transform, exclude_func)
     logger.info(f"Num of dev examples {len(data_dev)}")
     del data_dev

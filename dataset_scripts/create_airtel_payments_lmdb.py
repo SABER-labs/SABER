@@ -5,6 +5,7 @@ from utils.logger import logger
 from datasets.librispeech import convert_to_mel, label_transform
 import os
 import pandas as pd
+from functools import partial
 
 def exclude_func(img, label):
     audio_size = img.squeeze(0).shape[0]
@@ -16,6 +17,7 @@ if __name__ == '__main__':
     commonvoice_dataset_root = "/tts_data/asrdata/testset-backup-paymentbank-validation"
     # commonvoice_dataset_root = "~/AirtelDEV/VoiceDataForAirtel/testset-backup-paymentbank-validation"
     language_codes = ["en"]
+    convert_to_mel_val = partial(convert_to_mel, train=False)
 
     for language in language_codes:
         trainPath = os.path.join(lmdb_root_path, f'train-labelled-{language}')
@@ -37,6 +39,6 @@ if __name__ == '__main__':
         test_df = pd.read_csv(test_csv_path).rename(columns={"audio_filepath": "audio_path", "text": "transcription"})
         data_test = datasets.LibriSpeech(root=commonvoice_dataset_root, dataframe=test_df)
         logger.info('test dataset loaded')
-        createDataset(testPath, data_test, convert_to_mel, label_transform, exclude_func)
+        createDataset(testPath, data_test, convert_to_mel_val, label_transform, exclude_func)
         logger.info(f"Num of test examples {len(data_test)}")
         del data_test
