@@ -4,7 +4,7 @@ from datasets.librispeech import sequence_to_string
 from utils import config
 import os
 import torch
-from models.mixnet_cnn import ASRModel
+from models.quartznet import ASRModel
 from utils.logger import logger
 from functools import partial
 from datasets.librispeech import allign_collate, image_train_transform, image_val_transform

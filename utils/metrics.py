@@ -6,10 +6,6 @@ from ignite.metrics.metric import reinit__is_reduced
 from datasets.librispeech import get_vocab_list, sequence_to_string
 import torch
 
-def clean_gt(s2):
-    s2 = ''.join([s for s in s2 if s in get_vocab_list()])
-    return s2.strip()
-
 def werCalc(s1, s2):
     """
     Computes the Word Error Rate, defined as the edit distance between the
