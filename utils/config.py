@@ -31,7 +31,7 @@ ref_db = 20
 max_db = 100
 
 # Model training configs
-num_cores = 30
+num_cores = 10
 
 # Training configs
 gpu_id = '0,1,2'
