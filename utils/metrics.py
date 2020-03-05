@@ -3,7 +3,7 @@ import numpy as np
 from utils.model_utils import get_most_probable
 from ignite.metrics import Metric, Accuracy
 from ignite.metrics.metric import reinit__is_reduced
-from datasets.librispeech import get_sentence, get_vocab_list
+from datasets.librispeech import get_vocab_list, sequence_to_string
 import torch
 
 def clean_gt(s2):
@@ -19,7 +19,7 @@ def werCalc(s1, s2):
         s2 (string): space-separated sentence
     """
     s1 = s1.lower()
-    s2 = clean_gt(s2.lower())
+    s2 = s2.lower()
     # build mapping of words to integers
     b = set(s1.split() + s2.split())
     word2char = dict(zip(b, range(len(b))))
@@ -38,7 +38,7 @@ def cerCalc(s1, s2):
         s2 (string): space-separated sentence
     """
     s1 = s1.lower()
-    s2 = clean_gt(s2.lower())
+    s2 = s2.lower()
     s1, s2 = s1.replace(' ', ''), s2.replace(' ', '')
     return Lev.distance(s1, s2) / len(s2)
 
@@ -49,7 +49,7 @@ def batch_wer_accuracy(preds, labels, label_lengths):
     wer = []
     for i, length in enumerate(label_lengths.cpu().tolist()):
         pred_sentence = pred_sentences[i]
-        gt_sentence = get_sentence(labels_list[idx:idx+length])
+        gt_sentence = sequence_to_string(labels_list[idx:idx+length])
         wer.append(werCalc(pred_sentence, gt_sentence))
         idx += length
     return np.sum(wer)
@@ -61,7 +61,7 @@ def batch_cer_accuracy(preds, labels, label_lengths):
     cer = []
     for i, length in enumerate(label_lengths.cpu().tolist()):
         pred_sentence = pred_sentences[i]
-        gt_sentence = get_sentence(labels_list[idx:idx+length])
+        gt_sentence = sequence_to_string(labels_list[idx:idx+length])
         cer.append(cerCalc(pred_sentence, gt_sentence))
         idx += length
     return np.sum(cer)

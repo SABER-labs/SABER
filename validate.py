@@ -1,5 +1,5 @@
 from utils.model_utils import get_most_probable, get_most_probable_beam
-from datasets.librispeech import get_sentence
+from datasets.librispeech import sequence_to_string
 
 from utils import config
 import os
@@ -70,7 +70,7 @@ def main():
             idx = 0
             for i, length in enumerate(label_lengths.cpu().tolist()):
                 pred_sentence = pred_sentences[i]
-                gt_sentence = get_sentence(labels_list[idx:idx+length])
+                gt_sentence = sequence_to_string(labels_list[idx:idx+length])
                 idx += length
                 print(f"Pred sentence: {pred_sentence}, GT: {gt_sentence}")
         return (y_pred, labels, label_lengths)
