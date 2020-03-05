@@ -7,7 +7,7 @@ libri_unlabeled_data_sets = ['train-clean-360', 'train-other-500']
 libri_test_clean_data_sets = ['test-clean']
 libri_test_other_data_sets = ['test-other']
 libri_dev_data_sets = ['dev-clean', 'dev-other']
-vocab_size = 28
+vocab_size = 128
 sentencepiece_model = f'dataset_scripts/sp_librispeech_{vocab_size}.model'
 lmdb_root_path = f'lmdb-databases-librispeech_{vocab_size}'
 lmdb_commonvoice_root_path = f'lmdb-databases-common_voice_{vocab_size}'
@@ -36,7 +36,7 @@ num_cores = 30
 # Training configs
 gpu_id = '0,1,2'
 workers = 50
-train_batch_size = 12 * len(gpu_id.split(","))
+train_batch_size = 16 * len(gpu_id.split(","))
 epochs = 400
 lr = 1e-3
 lr_gamma = 0.1
