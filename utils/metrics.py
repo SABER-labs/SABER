@@ -99,7 +99,7 @@ class CharacterErrorRate(Accuracy):
         self._num_examples += label_lengths.shape[0]
 
 if __name__ == "__main__":
-    s1 = "WTF, WHO, ARE YOu ? $!"
+    s1 = "WTF WHO ARE YOu"
     s2 = "wff who are you"
     wer = werCalc(s2, s1)
     cer = cerCalc(s2, s1)
