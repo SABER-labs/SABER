@@ -9,7 +9,6 @@ from utils.vocab import Vocab
 
 sp = spm.SentencePieceProcessor()
 sp.Load(config.sentencepiece_model)
-# sp = Vocab()
 logger.info(f'{config.sentencepiece_model} has been loaded!')
 
 def convert_to_mel(signal, frac_to_apply=0.3, train=True):
@@ -42,22 +41,13 @@ def image_val_transform(spec, epoch):
     return transforms(data)
 
 def label_transform(label):
-    return np.array(sp.EncodeAsIds(label.lower()), dtype=np.int32)
+    return np.array([i for i in sp.EncodeAsIds(label.lower()) if i != 0], dtype=np.int32)
 
 def label_re_transform(classes):
     return sp.DecodeIds(classes)
 
 def get_vocab_list():
     return [sp.IdToPiece(id) for id in range(sp.GetPieceSize())][1:]
-
-# def label_transform(label):
-#     return np.array(sp.encode(label.lower()), dtype=np.int32)
-
-# def label_re_transform(classes):
-#     return sp.decode(classes)
-
-# def get_vocab_list():
-#     return sp.vocab
 
 def allign_collate(batch, device='cpu'):
     img_list, label_list = zip(*batch)
