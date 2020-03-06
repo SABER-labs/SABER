@@ -81,7 +81,7 @@ class ChangeSpeedAndPitchAudio(object):
 class StretchAudio(object):
     """Stretches an audio randomly."""
 
-    def __init__(self, max_scale=[0.9, 1.25]):
+    def __init__(self, max_scale=[0.95, 1.25]):
         self.max_scale = max_scale
 
     def __call__(self, data):
