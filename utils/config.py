@@ -13,6 +13,7 @@ lmdb_root_path = f'lmdb-databases-librispeech_{vocab_size}'
 lmdb_commonvoice_root_path = f'lmdb-databases-common_voice_{vocab_size}'
 lmdb_airtel_root_path = f'lmdb-databases-airtel_{vocab_size}'
 lmdb_airtel_payments_root_path = f'lmdb-databases-airtel_payments_{vocab_size}'
+lmdb_airtel_hinglish_root_path = f'lmdb-databases-airtel_hinglish_{vocab_size}'
 
 # Mel feature configs
 sampling_rate = 16000

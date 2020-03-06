@@ -10,7 +10,12 @@ from functools import partial
 from datasets.librispeech import allign_collate, image_train_transform, image_val_transform
 from utils.lmdb import lmdbMultiDataset
 from utils.training_utils import save_checkpoint, BestMeter
-from utils.config import lmdb_root_path, workers, train_batch_size, unsupervision_warmup_epoch, log_path, epochs, lmdb_commonvoice_root_path, lmdb_airtel_root_path, lmdb_airtel_payments_root_path
+from utils.config import workers, \
+    train_batch_size, unsupervision_warmup_epoch, \
+    log_path, epochs, \
+    lmdb_root_path, lmdb_commonvoice_root_path, \
+    lmdb_airtel_root_path, lmdb_airtel_payments_root_path \
+    lmdb_airtel_hinglish_root_path
 import ignite
 from ignite.engine import Events, Engine
 from ignite.metrics import Loss
@@ -45,8 +50,11 @@ def init_parms():
 
 
 def main():
+    # Init state params
     params = init_parms()
     device = params.get('device')
+
+    # Loading the model, optimizer & criterion
     model = ASRModel(input_features=config.num_mel_banks,
                      num_classes=config.vocab_size).to(device)
     model = torch.nn.DataParallel(model)
@@ -56,40 +64,55 @@ def main():
     start_epoch = params['start_epoch']
     sup_criterion = CustomCTCLoss()
     unsup_criterion = UDALoss()
+
+    # Init tensorboard logger, currently gives an error on 37 server.
     tb_logger = TensorboardLogger(log_dir=log_path)
+
+    # Validation progress bars defined here.
     pbar = ProgressBar(persist=True, desc="Training")
     pbar_valid = ProgressBar(persist=True, desc="Validation Clean")
     pbar_valid_other = ProgressBar(persist=True, desc="Validation Other")
     pbar_valid_airtel = ProgressBar(persist=True, desc="Validation Airtel")
     pbar_valid_airtel_payments = ProgressBar(persist=True, desc="Validation Airtel Payments")
+    pbar_valid_airtel_hinghlish = ProgressBar(persist=True, desc="Validation Airtel Highlish")
+
+    # load timer and best meter to keep track of state params
     timer = Timer(average=True)
     best_meter = params.get('best_stats', BestMeter())
 
+    # load all the train data
     logger.info('Begining to load Datasets')
-
     trainCleanPath = os.path.join(lmdb_root_path, 'train-labelled')
     trainOtherPath = os.path.join(lmdb_root_path, 'train-unlabelled')
     trainCommonVoicePath = os.path.join(
         lmdb_commonvoice_root_path, 'train-labelled-en')
     trainAirtelPath = os.path.join(lmdb_airtel_root_path, 'train-labelled-en')
     trainAirtelPaymentsPath = os.path.join(lmdb_airtel_payments_root_path, 'train-labelled-en')
+    trainAirtelHinglishPath = os.path.join(lmdb_airtel_hinglish_root_path, 'train-labelled-en')
+
+    # test data
     testCleanPath = os.path.join(lmdb_root_path, 'test-clean')
     testOtherPath = os.path.join(lmdb_root_path, 'test-other')
     testAirtelPath = os.path.join(lmdb_airtel_root_path, 'test-labelled-en')
     testAirtelPaymentsPath = os.path.join(lmdb_airtel_payments_root_path, 'test-labelled-en')
+    testAirtelHinglishPath = os.path.join(lmdb_airtel_hinglish_root_path, 'test-labelled-en')
+
+    # ideally the unsupervised data here
     devOtherPath = os.path.join(lmdb_root_path, 'dev-other')
 
+    # form data loaders
     train_clean = lmdbMultiDataset(
-        roots=[trainCleanPath, trainOtherPath, trainCommonVoicePath, trainAirtelPath, trainAirtelPaymentsPath], transform=image_train_transform)
+        roots=[trainCleanPath, trainOtherPath, trainCommonVoicePath, trainAirtelPath, trainAirtelPaymentsPath, trainAirtelHinglishPath], transform=image_train_transform)
     train_other = lmdbMultiDataset(roots=[devOtherPath], transform=image_train_transform)
 
     test_clean = lmdbMultiDataset(roots=[testCleanPath], transform=image_val_transform)
     test_other = lmdbMultiDataset(roots=[testOtherPath], transform=image_val_transform)
     test_airtel = lmdbMultiDataset(roots=[testAirtelPath], transform=image_val_transform)
     test_payments_airtel = lmdbMultiDataset(roots=[testAirtelPaymentsPath], transform=image_val_transform)
+    test_hinglish_airtel = lmdbMultiDataset(roots=[testAirtelHinglishPath], transform=image_val_transform)
 
     logger.info(
-        f'Loaded Train & Test Datasets, train_labbeled={len(train_clean)}, train_unlabbeled={len(train_other)}, test_clean={len(test_clean)}, test_other={len(test_other)}, test_airtel={len(test_airtel)}, test_payments_airtel={len(test_payments_airtel)} examples')
+        f'Loaded Train & Test Datasets, train_labbeled={len(train_clean)}, train_unlabbeled={len(train_other)}, test_clean={len(test_clean)}, test_other={len(test_other)}, test_airtel={len(test_airtel)}, test_payments_airtel={len(test_payments_airtel)}, test_hinglish_airtel={len(test_hinglish_airtel)} examples')
 
     def train_update_function(engine, _):
         optimizer.zero_grad()
@@ -147,11 +170,14 @@ def main():
         test_airtel, batch_size=torch.cuda.device_count(), shuffle=False, num_workers=config.workers, pin_memory=True, collate_fn=allign_collate)
     test_loader_airtel_payments = torch.utils.data.DataLoader(
         test_payments_airtel, batch_size=torch.cuda.device_count(), shuffle=False, num_workers=config.workers, pin_memory=True, collate_fn=allign_collate)
+    test_loader_airtel_hinglish = torch.utils.data.DataLoader(
+        test_hinglish_airtel, batch_size=torch.cuda.device_count(), shuffle=False, num_workers=config.workers, pin_memory=True, collate_fn=allign_collate)
     trainer = Engine(train_update_function)
     evaluator_clean = Engine(validate_update_function)
     evaluator_other = Engine(validate_update_function)
     evaluator_airtel = Engine(validate_update_function)
     evaluator_airtel_payments = Engine(validate_update_function)
+    evaluator_airtel_hinglish = Engine(validate_update_function)
     metrics = {'wer': WordErrorRate(), 'cer': CharacterErrorRate()}
     iteration_log_step = int(0.33 * len(train_loader_labbeled_loader))
     for name, metric in metrics.items():
@@ -159,6 +185,7 @@ def main():
         metric.attach(evaluator_other, name)
         metric.attach(evaluator_airtel, name)
         metric.attach(evaluator_airtel_payments, name)
+        metric.attach(evaluator_airtel_hinglish, name)
 
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=config.lr_gamma, patience=int(
         config.epochs * 0.05), verbose=True, threshold_mode="abs", cooldown=int(config.epochs * 0.025), min_lr=1e-5)
@@ -196,6 +223,10 @@ def main():
                      log_handler=OutputHandler(tag="validation_airtel_payments", metric_names=[
                                                "wer", "cer"], another_engine=trainer),
                      event_name=Events.EPOCH_COMPLETED)
+    tb_logger.attach(evaluator_airtel_hinglish,
+                     log_handler=OutputHandler(tag="validation_airtel_highlish", metric_names=[
+                                               "wer", "cer"], another_engine=trainer),
+                     event_name=Events.EPOCH_COMPLETED)
     pbar.attach(trainer, output_transform=lambda x: {'loss': x})
     pbar_valid.attach(evaluator_clean, [
                       'wer', 'cer'], event_name=Events.EPOCH_COMPLETED, closing_event_name=Events.COMPLETED)
@@ -204,6 +235,8 @@ def main():
     pbar_valid_airtel.attach(evaluator_airtel, [
                             'wer', 'cer'], event_name=Events.EPOCH_COMPLETED, closing_event_name=Events.COMPLETED)
     pbar_valid_airtel_payments.attach(evaluator_airtel_payments, [
+                            'wer', 'cer'], event_name=Events.EPOCH_COMPLETED, closing_event_name=Events.COMPLETED)
+    pbar_valid_airtel_hinghlish.attach(evaluator_airtel_hinglish, [
                             'wer', 'cer'], event_name=Events.EPOCH_COMPLETED, closing_event_name=Events.COMPLETED)
     timer.attach(trainer)
 
