@@ -123,25 +123,25 @@ def main():
 
         imgs_sup = imgs_sup.to(device)
         labels_sup = labels_sup
-        with torch.autograd.detect_anomaly():
-            probs_sup = model(imgs_sup)
-            # Unsupervised gt, pred
-            # imgs_unsup, augmented_imgs_unsup = next(engine.state.train_loader_unlabbeled)
-            # with torch.no_grad():
-            #     probs_unsup = model(imgs_unsup.to(device))
-            # probs_aug_unsup = model(augmented_imgs_unsup.to(device))
-            sup_loss = sup_criterion(probs_sup, labels_sup, label_lengths, input_lengths)
-            # unsup_loss = unsup_criterion(probs_unsup, probs_aug_unsup)
+        # with torch.autograd.detect_anomaly():
+        probs_sup = model(imgs_sup)
+        # Unsupervised gt, pred
+        # imgs_unsup, augmented_imgs_unsup = next(engine.state.train_loader_unlabbeled)
+        # with torch.no_grad():
+        #     probs_unsup = model(imgs_unsup.to(device))
+        # probs_aug_unsup = model(augmented_imgs_unsup.to(device))
+        sup_loss = sup_criterion(probs_sup, labels_sup, label_lengths, input_lengths)
+        # unsup_loss = unsup_criterion(probs_unsup, probs_aug_unsup)
 
-            # Blend supervised and unsupervised losses till unsupervision_warmup_epoch
-            # alpha = get_alpha(engine.state.epoch)
-            # final_loss = ((1 - alpha) * sup_loss) + (alpha * unsup_loss)
+        # Blend supervised and unsupervised losses till unsupervision_warmup_epoch
+        # alpha = get_alpha(engine.state.epoch)
+        # final_loss = ((1 - alpha) * sup_loss) + (alpha * unsup_loss)
 
-            # final_loss = sup_loss
-            sup_loss.backward()
-            optimizer.step()
+        # final_loss = sup_loss
+        sup_loss.backward()
+        optimizer.step()
 
-            return sup_loss.item()
+        return sup_loss.item()
 
     @torch.no_grad()
     def validate_update_function(engine, batch):
