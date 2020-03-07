@@ -264,6 +264,7 @@ def main():
             evaluator_other.run(test_loader_other)
             evaluator_airtel.run(test_loader_airtel)
             evaluator_airtel_payments.run(test_loader_airtel_payments)
+            evaluator_airtel_hinglish.run(test_loader_airtel_hinglish)
             model.train()
             logger.info('Model set back to train mode')
 
