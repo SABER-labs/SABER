@@ -11,17 +11,17 @@ sp = spm.SentencePieceProcessor()
 sp.Load(config.sentencepiece_model)
 logger.info(f'{config.sentencepiece_model} has been loaded!')
 
-def convert_to_mel(signal, frac_to_apply=0.3, train=True):
+def convert_to_mel(signal, frac_to_apply=0.25, train=True):
     data = {'samples': signal.squeeze(0),
             'sample_rate': config.sampling_rate}
     stretch = RandomApply([StretchAudio()], p=frac_to_apply)
     to_stft = ToSTFT(n_fft=config.n_fft, hop_length=config.hop_length,
                      win_length=config.window_length)
     stft_to_mel = ToMelSpectrogramFromSTFT(n_mels=config.num_mel_banks)
-    transforms = [ to_stft, stft_to_mel, DeleteSTFT(), ToAudioTensor(['mel_spectrogram']) ]
+    interim_transforms = [ to_stft, stft_to_mel, DeleteSTFT(), ToAudioTensor(['mel_spectrogram']) ]
     if train:
-        transforms = [stretch] + transforms
-    return Compose(transforms)(data)
+        interim_transforms = [ stretch ] + interim_transforms
+    return Compose(interim_transforms)(data)
 
 def image_train_transform(spec, epoch):
     data = {'mel_spectrogram': spec,
@@ -51,15 +51,24 @@ def get_vocab_list():
 
 def allign_collate(batch, device='cpu'):
     img_list, label_list = zip(*batch)
-    imgs = np.zeros((len(img_list), config.num_mel_banks, max([img.shape[1] for img in img_list])), dtype=np.float32)
+    mel_spec_sizes = [img.shape[1] for img in img_list]
+    max_size = max(mel_spec_sizes)
+    mel_output_prob_sizes = [np.ceil(size / 2) for size in mel_spec_sizes]
+    length_list = [label.shape[0] for label in label_list]
+
+    for out_shape, length_l, i in zip(mel_output_prob_sizes, length_list, range(len(length_list))):
+        if out_shape < length_l:
+            mel_output_prob_sizes[i] = length_l
+
+    lengths = np.array(length_list).astype(np.int32)
+    imgs = np.zeros((len(img_list), config.num_mel_banks, max_size), dtype=np.float32)
     for i, img in enumerate(img_list):
         imgs[i, :, :img.shape[1]] = img
-    lengths = np.array([label.shape[0] for label in label_list]).astype(np.int32)
     flat_label_list = np.concatenate(label_list).astype(np.int32)
     imgs = torch.from_numpy(imgs)
     labels = torch.from_numpy(flat_label_list)
     label_lengths = torch.from_numpy(lengths)
-    image_lengths = torch.tensor([img.shape[1] / 2 for img in img_list], dtype=torch.int32) # model stride is 2
+    image_lengths = torch.tensor(mel_output_prob_sizes, dtype=torch.int32) # model stride is 2
     return (imgs, labels, label_lengths, image_lengths)
 
 def align_collate_unlabelled(batch, device='cpu'):

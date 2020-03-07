@@ -23,7 +23,7 @@ hop_in_ms = 10
 num_mel_banks = 80
 max_audio_length_in_secs = 17
 min_audio_length_in_secs = 2
-max_label_length = 350
+max_label_length = 150
 samples_per_ms = int(sampling_rate / ms_in_one_sec)
 window_length = int(samples_per_ms * window_in_ms)
 hop_length = int(samples_per_ms * hop_in_ms)
@@ -32,7 +32,7 @@ ref_db = 20
 max_db = 100
 
 # Model training configs
-num_cores = 10
+num_cores = 20
 
 # Training configs
 gpu_id = '0,1,2'
@@ -45,7 +45,7 @@ checkpoint_root = f'checkpoints_saber_{vocab_size}'
 log_path = f"checkpoints_logs/exp-{checkpoint_root}"
 checkpoint_version = ''
 best_model_version = 'best_saber.pth'
-min_frac = 0.6
+min_frac = 0.5
 max_frac = 0.9
 
 # UDA hyper-params

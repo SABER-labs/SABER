@@ -81,13 +81,14 @@ class ChangeSpeedAndPitchAudio(object):
 class StretchAudio(object):
     """Stretches an audio randomly."""
 
-    def __init__(self, max_scale=[0.95, 1.25]):
+    def __init__(self, max_scale=[0.9, 1.4]):
         self.max_scale = max_scale
 
     def __call__(self, data):
         sample_rate = data['sample_rate']
-        scale = random.uniform(*self.max_scale)
-        data['samples'] = time_stretch(data['samples'], sample_rate, scale)
+        scale = round(random.uniform(*self.max_scale), 2)
+        if data['samples'].shape[0] >= 2 * min_audio_length_in_secs * sample_rate:
+            data['samples'] = time_stretch(data['samples'], sample_rate, scale)
         return data
 
 class TimeshiftAudio(object):
