@@ -172,7 +172,7 @@ def main():
     iteration_log_step = int(0.33 * len(train_loader_labbeled_loader))
     for name, metric in metrics.items():
         metric.attach(evaluator_clean, name)
-        metric.attach(evaluator_other, name
+        metric.attach(evaluator_other, name)
 
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=config.lr_gamma, patience=int(
         config.epochs * 0.05), verbose=True, threshold_mode="abs", cooldown=int(config.epochs * 0.025), min_lr=1e-5)
