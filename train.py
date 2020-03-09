@@ -108,8 +108,10 @@ def main():
     test_clean = lmdbMultiDataset(roots=[testCleanPath], transform=image_val_transform)
     test_other = lmdbMultiDataset(roots=[testOtherPath], transform=image_val_transform)
 
-    logger.info(
-        f'Loaded Train & Test Datasets, train_labbeled={len(train_clean)}, train_unlabbeled={len(train_other)}, test_clean={len(test_clean)}, test_other={len(test_other)}, test_airtel={len(test_airtel)}, test_payments_airtel={len(test_payments_airtel)}, test_hinglish_airtel={len(test_hinglish_airtel)} examples')
+    logger.info(f'Loaded Train & Test Datasets, \
+            train_labbeled={len(train_clean)}, \
+            train_unlabbeled={len(train_other)}, \
+            test_clean={len(test_clean)}, test_other={len(test_other)}')
 
     def train_update_function(engine, _):
         optimizer.zero_grad()
@@ -163,26 +165,14 @@ def main():
         test_clean, batch_size=torch.cuda.device_count(), shuffle=False, num_workers=config.workers, pin_memory=True, collate_fn=allign_collate)
     test_loader_other = torch.utils.data.DataLoader(
         test_other, batch_size=torch.cuda.device_count(), shuffle=False, num_workers=config.workers, pin_memory=True, collate_fn=allign_collate)
-    test_loader_airtel = torch.utils.data.DataLoader(
-        test_airtel, batch_size=torch.cuda.device_count(), shuffle=False, num_workers=config.workers, pin_memory=True, collate_fn=allign_collate)
-    test_loader_airtel_payments = torch.utils.data.DataLoader(
-        test_payments_airtel, batch_size=torch.cuda.device_count(), shuffle=False, num_workers=config.workers, pin_memory=True, collate_fn=allign_collate)
-    test_loader_airtel_hinglish = torch.utils.data.DataLoader(
-        test_hinglish_airtel, batch_size=torch.cuda.device_count(), shuffle=False, num_workers=config.workers, pin_memory=True, collate_fn=allign_collate)
     trainer = Engine(train_update_function)
     evaluator_clean = Engine(validate_update_function)
     evaluator_other = Engine(validate_update_function)
-    evaluator_airtel = Engine(validate_update_function)
-    evaluator_airtel_payments = Engine(validate_update_function)
-    evaluator_airtel_hinglish = Engine(validate_update_function)
     metrics = {'wer': WordErrorRate(), 'cer': CharacterErrorRate()}
     iteration_log_step = int(0.33 * len(train_loader_labbeled_loader))
     for name, metric in metrics.items():
         metric.attach(evaluator_clean, name)
-        metric.attach(evaluator_other, name)
-        metric.attach(evaluator_airtel, name)
-        metric.attach(evaluator_airtel_payments, name)
-        metric.attach(evaluator_airtel_hinglish, name)
+        metric.attach(evaluator_other, name
 
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=config.lr_gamma, patience=int(
         config.epochs * 0.05), verbose=True, threshold_mode="abs", cooldown=int(config.epochs * 0.025), min_lr=1e-5)
@@ -229,12 +219,6 @@ def main():
                       'wer', 'cer'], event_name=Events.EPOCH_COMPLETED, closing_event_name=Events.COMPLETED)
     pbar_valid_other.attach(evaluator_other, [
                             'wer', 'cer'], event_name=Events.EPOCH_COMPLETED, closing_event_name=Events.COMPLETED)
-    pbar_valid_airtel.attach(evaluator_airtel, [
-                            'wer', 'cer'], event_name=Events.EPOCH_COMPLETED, closing_event_name=Events.COMPLETED)
-    pbar_valid_airtel_payments.attach(evaluator_airtel_payments, [
-                            'wer', 'cer'], event_name=Events.EPOCH_COMPLETED, closing_event_name=Events.COMPLETED)
-    pbar_valid_airtel_hinghlish.attach(evaluator_airtel_hinglish, [
-                            'wer', 'cer'], event_name=Events.EPOCH_COMPLETED, closing_event_name=Events.COMPLETED)
     timer.attach(trainer)
 
     @trainer.on(Events.STARTED)
@@ -259,9 +243,6 @@ def main():
             logger.info('Model set to eval mode')
             evaluator_clean.run(test_loader_clean)
             evaluator_other.run(test_loader_other)
-            evaluator_airtel.run(test_loader_airtel)
-            evaluator_airtel_payments.run(test_loader_airtel_payments)
-            evaluator_airtel_hinglish.run(test_loader_airtel_hinglish)
             model.train()
             logger.info('Model set back to train mode')
 
