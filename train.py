@@ -16,7 +16,6 @@ from utils.config import workers, \
     lmdb_root_path, lmdb_commonvoice_root_path, \
     lmdb_airtel_root_path, lmdb_airtel_payments_root_path, \
     lmdb_airtel_hinglish_root_path
-import ignite
 from ignite.engine import Events, Engine
 from ignite.metrics import Loss
 from utils.metrics import WordErrorRate, CharacterErrorRate

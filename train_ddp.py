@@ -1,13 +1,14 @@
 import argparse
 from utils.model_utils import get_most_probable, get_model_size
-from datasets.librispeech import get_sentence
+from datasets.librispeech import sequence_to_string
 
 from utils import config
 import os
 import torch
 
-from torch.nn.parallel import DistributedDataParallel
-from models.mixnet_cnn import ASRModel
+from apex import amp
+from apex.parallel import DistributedDataParallel
+from models.quartznet import ASRModel
 from utils.logger import logger
 from functools import partial
 from datasets.librispeech import allign_collate, image_train_transform, image_val_transform
@@ -48,8 +49,11 @@ def main(local_rank):
     logger.info(
         f'Model initialized with {get_model_size(model):.3f}M parameters')
     optimizer = Ranger(model.parameters(), lr=config.lr, eps=1e-5)
-    model = DistributedDataParallel(model, device_ids=[local_rank], output_device=local_rank, check_reduction=True)
     load_checkpoint(model, optimizer, params)
+
+    model, optimizer = amp.initialize(model, optimizer, opt_level="O0", loss_scale="dynamic")
+    model = DistributedDataParallel(model, delay_allreduce=True)
+
     print(f"Loaded model on {local_rank}")
     start_epoch = params['start_epoch']
     sup_criterion = CustomCTCLoss()
@@ -92,7 +96,6 @@ def main(local_rank):
         f'Loaded Train & Test Datasets, train_labbeled={len(train_clean)}, train_unlabbeled={len(train_other)}, test_clean={len(test_clean)}, test_other={len(test_other)}, test_airtel={len(test_airtel)}, test_payments_airtel={len(test_payments_airtel)} examples')
 
     def train_update_function(engine, _):
-        optimizer.zero_grad()
         # Supervised gt, pred
         imgs_sup, labels_sup, label_lengths = next(
             engine.state.train_loader_labbeled)
@@ -114,7 +117,9 @@ def main(local_rank):
         # final_loss = ((1 - alpha) * sup_loss) + (alpha * unsup_loss)
 
         # final_loss = sup_loss
-        sup_loss.backward()
+        optimizer.zero_grad()
+        with amp.scale_loss(sup_loss, optimizer) as scaled_loss:
+            scaled_loss.backward()
         optimizer.step()
 
         return sup_loss.item()
@@ -129,7 +134,7 @@ def main(local_rank):
             idx = 0
             for i, length in enumerate(label_lengths.cpu().tolist()):
                 pred_sentence = pred_sentences[i]
-                gt_sentence = get_sentence(labels_list[idx:idx+length])
+                gt_sentence = sequence_to_string(labels_list[idx:idx+length])
                 idx += length
                 print(f"Pred sentence: {pred_sentence}, GT: {gt_sentence}")
         return (y_pred, labels, label_lengths)
